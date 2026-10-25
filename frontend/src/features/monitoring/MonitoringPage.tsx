@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, WifiOff } from 'lucide-react';
+import { Plus, WifiOff, MapPin, Loader2 } from 'lucide-react';
 import { PageHeader } from '../../components/primitives/PageHeader';
 import { DataTable, Column } from '../../components/primitives/DataTable';
 import { Can } from '../../components/primitives/PermissionGate';
@@ -36,10 +36,41 @@ export const MonitoringPage: React.FC<MonitoringPageProps> = () => {
   const [germinationRatePct, setGerminationRatePct] = useState(90);
   const [inputAppliedCorrectly, setInputAppliedCorrectly] = useState(true);
   const [estimatedYieldKg, setEstimatedYieldKg] = useState(19500);
-  const [lat, setLat] = useState(8.0321);
-  const [lng, setLng] = useState(39.2145);
+  const [lat, setLat] = useState<number | null>(null);
+  const [lng, setLng] = useState<number | null>(null);
+  const [sideSellingRisk, setSideSellingRisk] = useState<'Low' | 'Medium' | 'High'>('Low');
+  const [isCapturingGps, setIsCapturingGps] = useState(false);
   const [contractId, setContractId] = useState('');
   const [notes, setNotes] = useState('');
+
+  const captureGps = () => {
+    setFormError('');
+    if (!navigator.geolocation) {
+      setFormError(t('monitoring.gpsUnavailable', 'This device or browser does not support GPS location capture. Enter coordinates manually.'));
+      return;
+    }
+    setIsCapturingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        if (latitude < 3 || latitude > 15 || longitude < 32 || longitude > 48) {
+          setFormError(t('monitoring.gpsOutsideEthiopia', 'The captured location is outside the configured Ethiopia coordinate bounds. Confirm the location before saving.'));
+        } else {
+          setLat(Number(latitude.toFixed(6)));
+          setLng(Number(longitude.toFixed(6)));
+        }
+        setIsCapturingGps(false);
+      },
+      (error) => {
+        setFormError(error.code === error.PERMISSION_DENIED
+          ? t('monitoring.gpsPermissionDenied', 'Location permission was denied. Allow location access or enter coordinates manually.')
+          : t('monitoring.gpsCaptureFailed', 'Unable to capture GPS coordinates. Try again or enter them manually.'));
+        setIsCapturingGps(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+    );
+  };
 
   const fetchRecords = async () => {
     setIsLoading(true);
@@ -102,17 +133,21 @@ export const MonitoringPage: React.FC<MonitoringPageProps> = () => {
   const handleCreateInspection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !activeScope || !contractId) return;
+    if (lat === null || lng === null) {
+      setFormError(t('monitoring.gpsRequired', 'Capture GPS coordinates or enter latitude and longitude before submitting this inspection.'));
+      return;
+    }
     const payload = {
       contractId,
       cropStage: stage,
       germinationRatePct,
       inputAppliedCorrectly,
-      sideSellingRisk: cropHealth === 'POOR' ? 'High' as const : cropHealth === 'FAIR' ? 'Medium' as const : 'Low' as const,
+      sideSellingRisk,
       pestOrWeatherAlert: 'None',
       estimatedYieldQt: Math.round(Number(estimatedYieldKg) / 100),
       gpsLat: Number(lat),
       gpsLng: Number(lng),
-      qualityNotes: notes.trim(),
+      qualityNotes: `Crop health: ${cropHealth}. ${notes.trim()}`,
     };
     setFormError('');
     setFormStatus('');
@@ -383,9 +418,7 @@ export const MonitoringPage: React.FC<MonitoringPageProps> = () => {
                 </div>
 
                 <div>
-                  <span className="block text-xs font-semibold text-stone-700 mb-1">
-                    GPS Coordinates (Ethiopian Bounds)
-                  </span>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2"><span className="block text-xs font-semibold text-stone-700">GPS Coordinates (Ethiopian Bounds)</span><button type="button" onClick={captureGps} disabled={isCapturingGps} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50">{isCapturingGps ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5" />}{isCapturingGps ? 'Capturing…' : 'Capture GPS'}</button></div>
                   <div className="flex gap-1 font-mono text-xs">
                     <input
                       aria-label={t('monitoring.latitude', 'Latitude')}
@@ -394,8 +427,8 @@ export const MonitoringPage: React.FC<MonitoringPageProps> = () => {
                       max="15"
                       type="number"
                       step="0.0001"
-                      value={lat}
-                      onChange={(e) => setLat(Number(e.target.value))}
+                      value={lat ?? ''}
+                      onChange={(e) => setLat(e.target.value === '' ? null : Number(e.target.value))}
                       className="w-1/2 p-2 border border-stone-300"
                       placeholder="Lat °N"
                     />
@@ -406,13 +439,18 @@ export const MonitoringPage: React.FC<MonitoringPageProps> = () => {
                       max="48"
                       type="number"
                       step="0.0001"
-                      value={lng}
-                      onChange={(e) => setLng(Number(e.target.value))}
+                      value={lng ?? ''}
+                      onChange={(e) => setLng(e.target.value === '' ? null : Number(e.target.value))}
                       className="w-1/2 p-2 border border-stone-300"
                       placeholder="Lon °E"
                     />
                   </div>
                 </div>
+              </div>
+
+              <div>
+                <label htmlFor="inspection-side-selling-risk" className="block text-xs font-semibold text-stone-700 mb-1">Side-selling risk</label>
+                <select id="inspection-side-selling-risk" value={sideSellingRisk} onChange={(event) => setSideSellingRisk(event.target.value as typeof sideSellingRisk)} className="w-full text-xs bg-white border border-stone-300 p-2"><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option></select>
               </div>
 
               <div>
@@ -428,6 +466,9 @@ export const MonitoringPage: React.FC<MonitoringPageProps> = () => {
                   className="w-full text-xs bg-white border border-stone-300 p-2"
                 />
               </div>
+
+              {formError && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">{formError}</div>}
+              {formStatus && <div role="status" className="rounded-lg border border-forest-200 bg-forest-50 p-3 text-xs text-forest-800">{formStatus}</div>}
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-stone-200">
                 <button

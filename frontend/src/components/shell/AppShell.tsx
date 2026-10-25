@@ -16,6 +16,8 @@ import {
   LogOut,
   Palette,
   ExternalLink,
+  Search,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { NAV_REGISTRY } from '../../lib/rbac/roles';
@@ -36,6 +38,11 @@ export const AppShell: React.FC<AppShellProps> = ({
   const { t } = useTranslation();
   const { currentUser, currentRole, activeScope, permissions, logout } = useAppStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [globalSearchResults, setGlobalSearchResults] = useState<Array<{ id: string; kind: string; title: string; detail: string; path: string }>>([]);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+  const [globalSearchMessage, setGlobalSearchMessage] = useState('');
 
   const getNavIcon = (iconName: string) => {
     switch (iconName) {
@@ -77,6 +84,60 @@ export const AppShell: React.FC<AppShellProps> = ({
     if (!item.requiredResource || !item.requiredAction) return true;
     return permissions.some((p) => p.startsWith(`${item.requiredResource}:${item.requiredAction}:`));
   });
+
+  const handleGlobalSearch = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const query = globalSearchQuery.trim();
+    if (query.length < 2) {
+      setGlobalSearchMessage(t('common.searchMinLength', 'Enter at least 2 characters to search.'));
+      setGlobalSearchResults([]);
+      setGlobalSearchOpen(true);
+      return;
+    }
+
+    const normalized = query.toLocaleLowerCase();
+    const jobs: Array<Promise<{ kind: string; items: any[] }>> = [];
+    if (permissions.some((permission) => permission.startsWith('contract:read:'))) {
+      jobs.push(api.contracts.list({ q: query }).then((response) => ({ kind: 'contract', items: response.contracts || [] })));
+    }
+    if (permissions.some((permission) => permission.startsWith('grievance:read:'))) {
+      jobs.push(api.grievances.list().then((response) => ({ kind: 'grievance', items: (response.grievances || []).filter((item) => [item.id, item.caseNumber, item.title, item.category, item.status, item.contractId].some((value) => String(value ?? '').toLocaleLowerCase().includes(normalized))) })));
+    }
+    if (permissions.some((permission) => permission.startsWith('linkage:read:'))) {
+      jobs.push(api.linkages.list().then((response) => ({ kind: 'linkage', items: (response.linkages || []).filter((item) => [item.id, item.commodity, item.buyerOrgName, item.woreda, item.kebele, item.status].some((value) => String(value ?? '').toLocaleLowerCase().includes(normalized))) })));
+    }
+
+    setGlobalSearchLoading(true);
+    setGlobalSearchOpen(true);
+    setGlobalSearchMessage('');
+    setGlobalSearchResults([]);
+    try {
+      const settled = await Promise.allSettled(jobs);
+      const results: Array<{ id: string; kind: string; title: string; detail: string; path: string }> = [];
+      let successfulSources = 0;
+      settled.forEach((result) => {
+        if (result.status !== 'fulfilled') return;
+        successfulSources += 1;
+        const { kind, items } = result.value;
+        items.forEach((item) => {
+          if (results.length >= 12) return;
+          if (kind === 'contract') {
+            results.push({ id: item.id, kind, title: item.contractNumber || item.title || 'Contract', detail: [item.commodity, item.region, item.status].filter(Boolean).join(' · '), path: `/contracts/${item.id}` });
+          } else if (kind === 'grievance') {
+            results.push({ id: item.id, kind, title: item.caseNumber || item.title || 'Grievance', detail: [item.category, item.status, item.contractId ? `Contract ${item.contractId}` : ''].filter(Boolean).join(' · '), path: '/grievances' });
+          } else {
+            results.push({ id: item.id, kind, title: item.commodity || 'Market demand', detail: [item.buyerOrgName, item.woreda, item.status].filter(Boolean).join(' · '), path: '/linkage' });
+          }
+        });
+      });
+      setGlobalSearchResults(results);
+      if (results.length === 0) {
+        setGlobalSearchMessage(successfulSources ? t('common.noSearchResults', 'No matching records were found.') : t('common.searchUnavailable', 'Search sources are unavailable. Check your connection and permissions.'));
+      }
+    } finally {
+      setGlobalSearchLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -150,6 +211,22 @@ export const AppShell: React.FC<AppShellProps> = ({
 
             {/* Right: Controls & User session */}
             <div className="flex items-center gap-3">
+              <div className="relative hidden w-64 lg:block">
+                <form onSubmit={(event) => void handleGlobalSearch(event)} role="search">
+                  <label className="sr-only" htmlFor="dcfms-global-search">{t('common.globalSearch', 'Search contracts, grievances and market demands')}</label>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                  <input id="dcfms-global-search" value={globalSearchQuery} onChange={(event) => setGlobalSearchQuery(event.target.value)} onFocus={() => { if (globalSearchResults.length || globalSearchMessage) setGlobalSearchOpen(true); }} placeholder={t('common.globalSearch', 'Search contracts, grievances…')} className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2 pl-9 pr-10 text-xs text-stone-800 placeholder:text-stone-400 focus:border-forest-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-forest-100" aria-expanded={globalSearchOpen} aria-controls="dcfms-global-search-results" />
+                  <button type="submit" aria-label={t('common.search', 'Search')} disabled={globalSearchLoading} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-stone-500 hover:bg-stone-100 focus:outline-none focus:ring-2 focus:ring-forest-600 disabled:opacity-50">{globalSearchLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}</button>
+                </form>
+                {globalSearchOpen && (globalSearchResults.length > 0 || globalSearchMessage || globalSearchLoading) && (
+                  <div id="dcfms-global-search-results" className="absolute right-0 top-full z-50 mt-2 max-h-[min(70vh,32rem)] w-[min(26rem,90vw)] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
+                    <div className="flex items-center justify-between px-2 py-1.5"><p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">{t('common.searchResults', 'Search results')}</p><button type="button" onClick={() => setGlobalSearchOpen(false)} className="rounded-md px-2 py-1 text-xs text-stone-500 hover:bg-stone-100">{t('common.close', 'Close')}</button></div>
+                    {globalSearchLoading && <p role="status" className="px-2 py-3 text-xs text-stone-500">{t('common.searching', 'Searching authorized records…')}</p>}
+                    {!globalSearchLoading && globalSearchMessage && <p role="status" className="px-2 py-3 text-xs text-stone-600">{globalSearchMessage}</p>}
+                    {globalSearchResults.map((result) => <button key={`${result.kind}-${result.id}`} type="button" onClick={() => { setGlobalSearchOpen(false); onNavigate(result.path); }} className="block w-full rounded-xl px-3 py-2.5 text-left hover:bg-forest-50 focus:outline-none focus:ring-2 focus:ring-forest-600"><span className="block text-xs font-semibold text-stone-900">{result.title}</span><span className="mt-1 block text-[11px] text-stone-500">{result.kind} · {result.detail || 'No additional details'}</span></button>)}
+                  </div>
+                )}
+              </div>
               <ShellControls />
 
               {currentUser && (

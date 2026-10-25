@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Wheat,
@@ -13,6 +13,7 @@ import {
 import { PageHeader } from '../../components/primitives/PageHeader';
 import { api } from '../../lib/api/client';
 import { formatEtb } from '../../lib/utils/format';
+import type { LinkageRequest } from '../../types/api';
 
 export interface ContractCreateWizardPageProps {
   onNavigate: (path: string) => void;
@@ -25,6 +26,37 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linkedDemand, setLinkedDemand] = useState<LinkageRequest | null>(null);
+
+  useEffect(() => {
+    const linkageId = new URLSearchParams(window.location.search).get('linkageId');
+    if (!linkageId) return;
+    let cancelled = false;
+    void api.linkages.list().then(({ linkages }) => {
+      if (cancelled) return;
+      const demand = linkages.find((item) => item.id === linkageId);
+      if (!demand) {
+        setError(t('wizard.linkageNotFound', 'The selected demand could not be found or is outside your access scope. Please select the contract details manually.'));
+        return;
+      }
+      setLinkedDemand(demand);
+      setFormData((current) => ({
+        ...current,
+        commodity: demand.commodity || current.commodity,
+        quantityKg: Number(demand.estimatedVolumeQt || 0) * 100 || current.quantityKg,
+        landAreaHectares: Number(demand.totalHectares || 0) || current.landAreaHectares,
+        woreda: demand.woreda || current.woreda,
+        kebele: demand.kebele || current.kebele,
+        contractorOrgName: demand.buyerOrgName || current.contractorOrgName,
+        farmerName: '',
+        farmerFaydaId: '',
+        farmerPhone: '',
+      }));
+    }).catch((err) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : t('wizard.linkageLoadFailed', 'Unable to load the selected demand.'));
+    });
+    return () => { cancelled = true; };
+  }, [t]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -163,6 +195,13 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
           { label: t('wizard.newContract', 'New Agreement') },
         ]}
       />
+
+      {linkedDemand && (
+        <div className="flex items-start gap-3 rounded-xl border border-forest-200 bg-forest-50 p-4 text-sm text-forest-900" role="status">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+          <div><p className="font-semibold">{t('wizard.linkedDemand', 'Creating a contract from a market demand')}</p><p className="mt-1">{linkedDemand.commodity} · {linkedDemand.estimatedVolumeQt.toLocaleString()} Qt · {linkedDemand.woreda}, {linkedDemand.kebele}. Verify buyer, farmer identity, quantity, dates and price before submitting.</p></div>
+        </div>
+      )}
 
       {/* Step Progress Indicators */}
       <div className="grid grid-cols-4 border border-stone-200 bg-white">
