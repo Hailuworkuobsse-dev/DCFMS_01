@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import { api } from './lib/api/client';
@@ -19,6 +19,10 @@ import { ComponentCatalogPage } from './features/storybook/ComponentCatalogPage'
 import { LoadingState, NotFoundState } from './components/primitives/States';
 import { ProtectedRoute } from './components/primitives/PermissionGate';
 import type { PermissionScope, PermissionString } from './types/api';
+
+const LandingPage = lazy(() =>
+  import('./features/landing/LandingPage').then((module) => ({ default: module.LandingPage }))
+);
 
 function getRoutePermissions(path: string, scope: PermissionScope | undefined): PermissionString[] {
   if (!scope) return [];
@@ -41,7 +45,7 @@ export default function App() {
   const { user, activeScope, setSession, setAuthChecked } = useAppStore();
   const location = useLocation();
   const routerNavigate = useNavigate();
-  const currentPath = location.pathname === '/' ? '/dashboard' : location.pathname;
+  const currentPath = location.pathname;
   const [isInitializing, setIsInitializing] = useState(true);
   const [initializationError, setInitializationError] = useState<string | null>(null);
 
@@ -71,7 +75,7 @@ export default function App() {
         if (mounted) {
           setAuthChecked(true);
           setIsInitializing(false);
-          if (!restoredSession && location.pathname !== '/login') {
+          if (!restoredSession && location.pathname !== '/login' && location.pathname !== '/') {
             routerNavigate('/login', { replace: true });
           }
         }
@@ -91,19 +95,36 @@ export default function App() {
     );
   }
 
-  if (!user || currentPath === '/login') {
-    if (user && currentPath === '/login') {
+  if (currentPath === '/') {
+    if (user) {
       return <Navigate to="/dashboard" replace />;
     }
+
     return (
-      <LoginPage
-        onSuccess={() => {
-          setInitializationError(null);
-          navigate('/dashboard');
-        }}
-        initialError={initializationError}
-      />
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-stone-100"><LoadingState message="Loading DCFMS landing page..." /></div>}>
+        <LandingPage onLoginNavigate={() => routerNavigate('/login')} />
+      </Suspense>
     );
+  }
+
+  if (!user) {
+    if (currentPath === '/login') {
+      return (
+        <LoginPage
+          onSuccess={() => {
+            setInitializationError(null);
+            navigate('/dashboard');
+          }}
+          initialError={initializationError}
+        />
+      );
+    }
+
+    return <Navigate to="/" replace />;
+  }
+
+  if (currentPath === '/login') {
+    return <Navigate to="/dashboard" replace />;
   }
 
   const renderContent = () => {
@@ -154,6 +175,10 @@ export default function App() {
 
     if (currentPath === '/storybook') {
       return <ComponentCatalogPage />;
+    }
+
+    if (currentPath === '/login') {
+      return <Navigate to="/dashboard" replace />;
     }
 
     return <NotFoundState />;
