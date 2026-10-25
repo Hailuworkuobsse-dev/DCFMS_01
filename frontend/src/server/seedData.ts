@@ -127,7 +127,7 @@ export function createInitialSeedDatabase(): SeedDatabase {
       primaryRole: 'KebeleOfficer',
       activeScopeId: 'scope-kebele-ude',
       scopedRoles: [
-        { id: 'scope-kebele-ude', roleId: 'KebeleOfficer', scopeType: 'woreda', scopeLabel: 'Ude Kebele FTC', region: 'Oromia', woreda: "Ada'a", kebele: 'Ude' },
+        { id: 'scope-kebele-ude', roleId: 'KebeleOfficer', scopeType: 'kebele', scopeLabel: 'Ude Kebele FTC', region: 'Oromia', woreda: "Ada'a", kebele: 'Ude' },
       ],
       region: 'Oromia',
       woreda: "Ada'a",
@@ -771,7 +771,7 @@ export function createInitialSeedDatabase(): SeedDatabase {
       principalEtb: 8500000,
       interestRatePct: 8.8,
       creditScoreBand: 'AAA - Cooperative Union Master',
-      status: 'Approved',
+      status: 'Submitted',
       createdAt: '2026-08-04T11:00:00Z',
     },
   ];

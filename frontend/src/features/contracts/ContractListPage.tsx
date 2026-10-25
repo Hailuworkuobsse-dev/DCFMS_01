@@ -132,7 +132,7 @@ export const ContractListPage: React.FC<ContractListPageProps> = ({ onNavigate }
           'Legally binding tripartite agricultural contracts under Proclamation No. 1289/2023'
         )}
         actions={
-          <Can permission="contract:create:woreda">
+          <Can resource="contract" action="create">
             <button
               type="button"
               onClick={() => onNavigate('/contracts/new')}

@@ -6,8 +6,9 @@ import { DataTable, Column } from '../../components/primitives/DataTable';
 import { StatusBadge } from '../../components/primitives/StatusBadge';
 import { Can } from '../../components/primitives/PermissionGate';
 import { api } from '../../lib/api/client';
-import { Grievance } from '../../types/api';
+import { Contract, Grievance } from '../../types/api';
 import { formatShortDate } from '../../lib/utils/format';
+import { useAppStore } from '../../store/useAppStore';
 
 export interface GrievancesPageProps {
   onNavigate?: (path: string) => void;
@@ -15,57 +16,88 @@ export interface GrievancesPageProps {
 
 export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
   const { t } = useTranslation();
+  const user = useAppStore((state) => state.user);
+  const activeScopeId = useAppStore((state) => state.activeScope?.id);
   const [grievances, setGrievances] = useState<Grievance[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [pendingAction, setPendingAction] = useState<{ grievance: Grievance; action: 'resolve' | 'escalate' } | null>(null);
+  const [actionReason, setActionReason] = useState('');
+  const [pendingActionId, setPendingActionId] = useState('');
 
   // Form State
   const [category, setCategory] = useState<'PRICE' | 'QUALITY' | 'DELIVERY' | 'PAYMENT' | 'INPUT' | 'BREACH'>('QUALITY');
   const [severity, setSeverity] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('HIGH');
-  const [title, setTitle] = useState('Grain moisture dispute at intake warehouse');
-  const [description, setDescription] = useState('Agro-processor test meter showed 13.2% moisture while DA certified meter showed 12.1%. Requested secondary verification by WBoA.');
+  const [contractId, setContractId] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
 
   const fetchGrievances = async () => {
     setIsLoading(true);
     try {
-      const res = await api.grievances.list();
-      setGrievances(res.grievances);
+      const [grievanceRes, contractRes] = await Promise.all([api.grievances.list(), api.contracts.list()]);
+      setGrievances(grievanceRes.grievances);
+      setContracts(contractRes.contracts);
+      setContractId((current) =>
+        contractRes.contracts.some((contract) => contract.id === current)
+          ? current
+          : contractRes.contracts[0]?.id || ''
+      );
     } catch (err) {
       console.error('Failed to load grievances:', err);
+      setActionError(err instanceof Error ? err.message : 'Unable to load grievance data.');
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchGrievances();
-  }, []);
+    void fetchGrievances();
+  }, [activeScopeId]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user || !contractId) return;
+    setActionError('');
     try {
       await api.grievances.create({
-        contractId: 'CTR-2026-001',
+        contractId,
         category,
         severity,
         title,
         description,
       });
+      setTitle('');
+      setDescription('');
       setIsNewModalOpen(false);
       await fetchGrievances();
     } catch (err) {
       console.error('Failed to file grievance:', err);
+      setActionError(err instanceof Error ? err.message : 'Unable to file the grievance.');
     }
   };
 
-  const handleResolve = async (id: string) => {
+  const handleCaseAction = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!pendingAction) return;
+    setPendingActionId(pendingAction.grievance.id);
+    setActionError('');
     try {
-      await api.grievances.resolve(id, {
-        resolutionNotes: 'Parties agreed to secondary grain testing by WBoA accredited laboratory. Price adjusted accordingly.',
-      });
+      if (pendingAction.action === 'resolve') {
+        await api.grievances.resolve(pendingAction.grievance.id, { resolutionNotes: actionReason.trim() });
+      } else {
+        await api.grievances.escalate(pendingAction.grievance.id, { reason: actionReason.trim() });
+      }
+      setPendingAction(null);
+      setActionReason('');
       await fetchGrievances();
     } catch (err) {
-      console.error('Failed to resolve grievance:', err);
+      console.error('Failed to update grievance:', err);
+      setActionError(err instanceof Error ? err.message : 'Unable to update the grievance.');
+    } finally {
+      setPendingActionId('');
     }
   };
 
@@ -84,7 +116,7 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
       header: t('grievances.subject', 'Dispute Subject'),
       render: (item) => (
         <div>
-          <p className="font-semibold text-stone-900">{item.title}</p>
+          <p className="font-semibold text-stone-900">{item.title || item.category}</p>
           <p className="text-[11px] text-stone-500 font-mono">
             Contract #{item.contractId?.slice(0, 8)} • Filed by {item.complainantName}
           </p>
@@ -120,7 +152,7 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
       header: t('grievances.forum', 'Forum'),
       render: (item) => (
         <span className="text-xs text-stone-600">
-          {item.stage === 'COURT' ? 'Woreda Court Bench' : 'WBoA Conciliation'}
+          {item.escalationLevel}
         </span>
       ),
     },
@@ -149,7 +181,7 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
           'Statutory conciliation, tripartite mediation, and judicial adjudication under Proclamation No. 1289/2023'
         )}
         actions={
-          <Can permission="grievance:create:own">
+          <Can resource="grievance" action="create">
             <button
               type="button"
               onClick={() => setIsNewModalOpen(true)}
@@ -187,22 +219,44 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
         isLoading={isLoading}
         searchPlaceholder={t('grievances.searchPlaceholder', 'Search disputes, contract #, parties...')}
         exportFileName="dcfms-grievances"
-        actions={(item) =>
-          item.status !== 'RESOLVED' ? (
-            <Can permission="grievance:approve:woreda">
-              <button
-                type="button"
-                onClick={() => handleResolve(item.id)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-forest-800 hover:bg-forest-900"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Resolve Dispute</span>
-              </button>
-            </Can>
-          ) : (
-            <span className="text-xs text-stone-400 font-mono">Resolved</span>
-          )
-        }
+        actions={(item) => {
+          const isResolved = item.status === 'Resolved' || item.status === 'RESOLVED' || item.status === 'DISMISSED';
+          const canEscalate = !isResolved && item.escalationLevel !== 'CourtArbitration';
+          if (isResolved) {
+            return <span className="text-xs text-stone-400 font-mono">{t('grievances.resolved', 'Resolved')}</span>;
+          }
+          return (
+            <div className="flex items-center gap-2">
+              {canEscalate && (
+                <Can resource="grievance" action="escalate">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionReason('');
+                      setPendingAction({ grievance: item, action: 'escalate' });
+                    }}
+                    className="px-2.5 py-1 text-xs font-semibold text-stone-800 border border-stone-300 hover:bg-stone-50"
+                  >
+                    {t('grievances.escalate', 'Escalate')}
+                  </button>
+                </Can>
+              )}
+              <Can resource="grievance" action="update">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionReason('');
+                    setPendingAction({ grievance: item, action: 'resolve' });
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-forest-800 hover:bg-forest-900"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{t('grievances.resolve', 'Resolve')}</span>
+                </button>
+              </Can>
+            </div>
+          );
+        }}
       />
 
       {/* New Grievance Modal */}
@@ -217,6 +271,25 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
             </p>
 
             <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <label htmlFor="grievance-contract" className="block text-xs font-semibold text-stone-700 mb-1">
+                  {t('grievances.contract', 'Related contract')}
+                </label>
+                <select
+                  id="grievance-contract"
+                  required
+                  value={contractId}
+                  onChange={(event) => setContractId(event.target.value)}
+                  className="w-full text-xs bg-white border border-stone-300 p-2"
+                >
+                  <option value="" disabled>{t('common.select', 'Select a contract')}</option>
+                  {contracts.map((contract) => (
+                    <option key={contract.id} value={contract.id}>
+                      {contract.contractNumber} · {contract.commodity} · {contract.producerName}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-stone-700 mb-1">
@@ -224,7 +297,7 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
                   </label>
                   <select
                     value={category}
-                    onChange={(e) => setCategory(e.target.value as any)}
+                    onChange={(e) => setCategory(e.target.value as typeof category)}
                     className="w-full text-xs bg-white border border-stone-300 p-2"
                   >
                     <option value="QUALITY">Quality & Moisture Dispute</option>
@@ -242,7 +315,7 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
                   </label>
                   <select
                     value={severity}
-                    onChange={(e) => setSeverity(e.target.value as any)}
+                    onChange={(e) => setSeverity(e.target.value as typeof severity)}
                     className="w-full text-xs bg-white border border-stone-300 p-2"
                   >
                     <option value="LOW">Low</option>
@@ -258,6 +331,8 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
                   Dispute Summary
                 </label>
                 <input
+                  required
+                  minLength={5}
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -270,6 +345,8 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
                   Detailed Claim & Evidence
                 </label>
                 <textarea
+                  required
+                  minLength={10}
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -287,13 +364,69 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold text-white bg-forest-800 hover:bg-forest-900"
+                  disabled={!contractId || title.trim().length < 5 || description.trim().length < 10}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-forest-800 hover:bg-forest-900 disabled:opacity-50"
                 >
                   Submit for WBoA Mediation
                 </button>
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {actionError && (
+        <div role="alert" className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {actionError}
+        </div>
+      )}
+      {pendingAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 p-4">
+          <form onSubmit={handleCaseAction} className="w-full max-w-md space-y-4 border border-stone-300 bg-white p-6 shadow-xl">
+            <div>
+              <h2 className="text-base font-bold text-stone-900">
+                {pendingAction.action === 'resolve'
+                  ? t('grievances.resolveTitle', 'Record grievance resolution')
+                  : t('grievances.escalateTitle', 'Escalate grievance')}
+              </h2>
+              <p className="mt-1 text-xs text-stone-600">{pendingAction.grievance.caseNumber}</p>
+            </div>
+            <label className="block text-xs font-semibold text-stone-700">
+              {pendingAction.action === 'resolve'
+                ? t('grievances.resolutionSummary', 'Resolution and evidence summary')
+                : t('grievances.escalationReason', 'Reason for escalation')}
+              <textarea
+                required
+                minLength={pendingAction.action === 'resolve' ? 10 : 5}
+                value={actionReason}
+                onChange={(event) => setActionReason(event.target.value)}
+                rows={4}
+                className="mt-1 w-full border border-stone-300 p-2 text-sm font-normal"
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingAction(null)}
+                className="border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-700"
+              >
+                {t('common.cancel', 'Cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={
+                  pendingActionId === pendingAction.grievance.id ||
+                  actionReason.trim().length < (pendingAction.action === 'resolve' ? 10 : 5)
+                }
+                className="bg-forest-800 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {pendingActionId === pendingAction.grievance.id
+                  ? t('common.saving', 'Saving...')
+                  : pendingAction.action === 'resolve'
+                    ? t('grievances.resolve', 'Resolve')
+                    : t('grievances.escalate', 'Escalate')}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

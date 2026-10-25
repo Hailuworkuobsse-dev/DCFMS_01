@@ -7,13 +7,12 @@ import type {
   RoleId,
 } from '../../types/api';
 
-const SCOPE_HIERARCHY: Record<PermissionScope, number> = {
-  own: 1,
-  org: 2,
-  woreda: 3,
+const ADMIN_SCOPE_HIERARCHY: Partial<Record<PermissionScope, number>> = {
+  kebele: 1,
+  woreda: 2,
+  zonal: 3,
   region: 4,
   federal: 5,
-  all: 6,
 };
 
 export interface ParsedPermission {
@@ -41,10 +40,12 @@ export function permissionSatisfies(
   if (g.resource !== r.resource) return false;
   if (g.action !== r.action) return false;
 
-  const grantedLevel = SCOPE_HIERARCHY[g.scope] ?? 0;
-  const requiredLevel = SCOPE_HIERARCHY[r.scope] ?? 0;
+  if (g.scope === 'all') return true;
+  if (g.scope === 'own' || g.scope === 'org' || r.scope === 'own' || r.scope === 'org' || r.scope === 'all') {
+    return g.scope === r.scope;
+  }
 
-  return grantedLevel >= requiredLevel;
+  return (ADMIN_SCOPE_HIERARCHY[g.scope] ?? 0) >= (ADMIN_SCOPE_HIERARCHY[r.scope] ?? 0);
 }
 
 export function hasResourceAction(
@@ -70,11 +71,11 @@ export function checkPermissionList(
 export function hasAnyRole(user: AuthUser | null, roles: RoleId[]): boolean {
   if (!user) return false;
   const activeRole = getActiveRole(user);
-  return roles.includes(activeRole);
+  return activeRole !== null && roles.includes(activeRole);
 }
 
-export function getActiveRole(user: AuthUser | null): RoleId {
-  if (!user) return 'ProducerIndividual';
+export function getActiveRole(user: AuthUser | null): RoleId | null {
+  if (!user) return null;
   const scoped = user.scopedRoles.find((s) => s.id === user.activeScopeId);
-  return scoped ? scoped.roleId : user.primaryRole;
+  return scoped?.roleId ?? null;
 }

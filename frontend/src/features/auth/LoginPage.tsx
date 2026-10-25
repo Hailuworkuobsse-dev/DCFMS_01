@@ -8,16 +8,18 @@ import { ShellControls } from '../../components/primitives/ShellControls';
 
 export interface LoginPageProps {
   onSuccess: () => void;
+  initialError?: string | null;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError }) => {
   const { t } = useTranslation();
   const { setSession } = useAppStore();
 
-  const [username, setUsername] = useState('superadmin@ati.gov.et');
-  const [password, setPassword] = useState('ati2025!');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
+  const isDevelopment = import.meta.env.DEV;
 
   // Quick Role selection presets
   const rolePresets: Array<{ role: RoleId; label: string; email: string }> = [
@@ -32,6 +34,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
   ];
 
   const handleSelectPreset = (preset: typeof rolePresets[0]) => {
+    if (!isDevelopment) return;
     setUsername(preset.email);
     setPassword('ati2025!');
     setError(null);
@@ -77,14 +80,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
       </header>
 
       {/* Main Login Area */}
-      <main className="flex-1 max-w-5xl mx-auto w-full p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+      <main className={`flex-1 max-w-5xl mx-auto w-full p-4 sm:p-6 grid grid-cols-1 ${isDevelopment ? 'lg:grid-cols-12' : 'lg:grid-cols-1'} gap-8 items-center`}>
         {/* Left: Persona Switcher for Evaluation */}
-        <div className="lg:col-span-6 space-y-4">
-          <div className="border border-stone-200 bg-white p-5 shadow-xs">
-            <div className="flex items-center gap-2 text-stone-900 font-bold text-sm mb-1">
-              <Shield className="w-4 h-4 text-forest-700" />
-              <span>{t('auth.evaluationPresets', 'One-Click Role Switcher (18 Roles)')}</span>
-            </div>
+        {isDevelopment && (
+          <div className="lg:col-span-6 space-y-4">
+            <div className="border border-stone-200 bg-white p-5 shadow-xs">
+              <div className="flex items-center gap-2 text-stone-900 font-bold text-sm mb-1">
+                <Shield className="w-4 h-4 text-forest-700" />
+                <span>{t('auth.evaluationPresets', 'Development demo accounts')}</span>
+              </div>
             <p className="text-xs text-stone-600 mb-4">
               {t(
                 'auth.presetsDesc',
@@ -123,9 +127,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
             </div>
           </div>
         </div>
+        )}
 
         {/* Right: Login Form */}
-        <div className="lg:col-span-6">
+        <div className={isDevelopment ? 'lg:col-span-6' : 'lg:col-span-1'}>
           <div className="bg-white border border-stone-300 p-6 sm:p-8 shadow-sm">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-stone-900">
@@ -169,9 +174,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
                     className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-stone-300 focus:outline-none focus:border-stone-900 focus:ring-1 focus:ring-stone-900"
                   />
                 </div>
-                <p className="text-[11px] text-stone-500 mt-1 font-mono">
-                  Default evaluation password: <span className="font-bold">ati2025!</span>
-                </p>
+                {isDevelopment && (
+                  <p className="text-[11px] text-stone-500 mt-1 font-mono">
+                    Development demo accounts use the preset password.
+                  </p>
+                )}
               </div>
 
               {error && (

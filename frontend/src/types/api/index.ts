@@ -38,7 +38,10 @@ export type PermissionResource =
   | 'audit_log'
   | 'system_config'
   | 'integration'
-  | 'dashboard';
+  | 'dashboard'
+  | 'parcel'
+  | 'cooperative'
+  | 'provider';
 
 export type PermissionAction =
   | 'create'
@@ -53,7 +56,15 @@ export type PermissionAction =
   | 'assign'
   | 'verify';
 
-export type PermissionScope = 'own' | 'org' | 'woreda' | 'region' | 'federal' | 'all';
+export type PermissionScope =
+  | 'own'
+  | 'org'
+  | 'kebele'
+  | 'woreda'
+  | 'zonal'
+  | 'region'
+  | 'federal'
+  | 'all';
 
 export type PermissionString = `${PermissionResource}:${PermissionAction}:${PermissionScope}`;
 
@@ -197,6 +208,7 @@ export interface LinkageRequest {
   status: LinkageStatus;
   buyerOrgId?: string;
   buyerOrgName?: string;
+  createdByOrgId?: string;
   supportLetterRef?: string;
   supportLetterIssuedAt?: string;
   createdAt: string;
@@ -261,10 +273,14 @@ export interface LoanApplication {
   applicantFaydaId: string;
   applicantName: string;
   principalEtb: number;
+  outstandingPrincipalEtb?: number;
   interestRatePct: number;
   creditScoreBand: string;
+  cropCycle?: string;
   status: LoanStatus;
   disbursedAt?: string;
+  decisionAt?: string;
+  decisionReason?: string;
   createdAt: string;
 }
 
@@ -291,6 +307,8 @@ export interface SettlementRecord {
   settlementNumber?: string;
   contractId: string;
   contractNumber: string;
+  deliveryReference?: string;
+  fiOrgId?: string;
   producerName: string;
   farmerName?: string;
   deliveredKg?: number;
@@ -355,6 +373,7 @@ export interface GrievanceCase {
   category: string;
   severity?: string;
   description: string;
+  escalationReason?: string;
   stage?: string;
   escalationLevel: 'ContractorTier' | 'WoredaCommittee' | 'RegionalPanel' | 'CourtArbitration' | string;
   slaDueAt: string;
@@ -440,4 +459,3 @@ export type MonitoringRecord = MonitoringReport;
 export type Settlement = SettlementRecord;
 export type Loan = LoanApplication;
 export type Grievance = GrievanceCase;
-

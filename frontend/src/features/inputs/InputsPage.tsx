@@ -162,7 +162,7 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
         exportFileName="dcfms-input-vouchers"
         actions={(item) =>
           item.status === 'Issued' || item.status === 'ISSUED' ? (
-            <Can permission="input_voucher:update:woreda">
+            <Can resource="input_voucher" action="verify">
               <button
                 type="button"
                 onClick={() => setRedeemingVoucher(item)}

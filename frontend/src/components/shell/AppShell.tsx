@@ -18,7 +18,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
-import { NAV_REGISTRY, ROLE_REGISTRY } from '../../lib/rbac/roles';
+import { NAV_REGISTRY } from '../../lib/rbac/roles';
 import { ShellControls } from '../primitives/ShellControls';
 import { api } from '../../lib/api/client';
 
@@ -69,20 +69,20 @@ export const AppShell: React.FC<AppShellProps> = ({
     }
   };
 
-  const roleInfo = ROLE_REGISTRY[currentRole];
-  const userPermissions = permissions.length > 0 ? permissions : roleInfo?.permissions || [];
-
   // Filter navigation items by user permissions
   const navItems = NAV_REGISTRY.filter((item) => {
+    if (item.requiredAnyPermissions) {
+      return item.requiredAnyPermissions.some((required) => permissions.includes(required));
+    }
     if (!item.requiredResource || !item.requiredAction) return true;
-    return userPermissions.some((p) => p.startsWith(`${item.requiredResource}:${item.requiredAction}:`));
+    return permissions.some((p) => p.startsWith(`${item.requiredResource}:${item.requiredAction}:`));
   });
 
   const handleLogout = async () => {
     try {
       await api.auth.logout();
-    } catch (e) {
-      // ignore
+    } catch (error) {
+      console.error('Unable to invalidate the server session during sign-out:', error);
     }
     logout();
     onNavigate('/login');
@@ -115,7 +115,8 @@ export const AppShell: React.FC<AppShellProps> = ({
                 type="button"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 className="lg:hidden p-1.5 text-stone-600 hover:text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900"
-                aria-label="Toggle navigation menu"
+                aria-label={t('common.toggleNavigation', 'Toggle navigation menu')}
+                aria-expanded={isMobileMenuOpen}
               >
                 {isMobileMenuOpen ? (
                   <X className="w-5 h-5" />
@@ -124,9 +125,11 @@ export const AppShell: React.FC<AppShellProps> = ({
                 )}
               </button>
 
-              <div
+              <button
+                type="button"
                 onClick={() => onNavigate('/dashboard')}
-                className="flex items-center gap-2.5 cursor-pointer"
+                aria-label={t('nav.dashboard', 'Dashboard')}
+                className="flex items-center gap-2.5 cursor-pointer text-left"
               >
                 <div className="w-8 h-8 bg-forest-800 text-harvest-400 flex items-center justify-center font-bold text-sm border border-forest-900 shadow-xs">
                   ATI
@@ -144,7 +147,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                     Digital Contract Farming Management System
                   </p>
                 </div>
-              </div>
+              </button>
             </div>
 
             {/* Right: Controls & User session */}
@@ -165,6 +168,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                     type="button"
                     onClick={handleLogout}
                     title={t('common.logout', 'Sign out')}
+                    aria-label={t('common.logout', 'Sign out')}
                     className="p-1.5 text-stone-500 hover:text-stone-900 border border-stone-200 hover:bg-stone-50"
                   >
                     <LogOut className="w-3.5 h-3.5" />
@@ -318,7 +322,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         )}
 
         {/* Main Content Area */}
-        <main id="main-content" className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+        <main id="main-content" tabIndex={-1} className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto focus:outline-none">
           {children}
         </main>
       </div>

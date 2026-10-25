@@ -2,8 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   contractWizardSchema,
+  grievanceEscalationSchema,
+  grievanceIntakeSchema,
+  grievanceResolutionSchema,
+  loanDecisionSchema,
   otpSignatureSchema,
   monitoringReportSchema,
+  settlementCreateSchema,
 } from './schemas';
 
 test('contractWizardSchema enforces 12-digit Fayda ID and floor price invariant', () => {
@@ -83,4 +88,38 @@ test('monitoringReportSchema enforces Ethiopian geographic bounds', () => {
     qualityNotes: 'Test notes description.',
   });
   assert.equal(invalidGps.success, false);
+});
+
+test('loan decisions require an explicit outcome and rationale', () => {
+  assert.equal(loanDecisionSchema.safeParse({ action: 'approve', reason: 'Credit check passed.' }).success, true);
+  assert.equal(loanDecisionSchema.safeParse({ action: 'approve', reason: 'ok' }).success, false);
+  assert.equal(loanDecisionSchema.safeParse({ action: 'hold', reason: 'More review needed.' }).success, false);
+});
+
+test('grievance intake and closure require the workflow fields and auditable explanations', () => {
+  const intake = {
+    contractId: 'CTR-2026-001',
+    category: 'QUALITY',
+    title: 'Moisture measurement dispute',
+    severity: 'HIGH',
+    description: 'The recorded grain moisture reading differs between the parties.',
+  };
+  assert.equal(grievanceIntakeSchema.safeParse(intake).success, true);
+  assert.equal(grievanceIntakeSchema.safeParse({ ...intake, title: '' }).success, false);
+  assert.equal(grievanceResolutionSchema.safeParse({ resolutionSummary: 'Secondary inspection completed and accepted by both parties.' }).success, true);
+  assert.equal(grievanceResolutionSchema.safeParse({ resolutionSummary: 'Done.' }).success, false);
+  assert.equal(grievanceEscalationSchema.safeParse({ reason: 'No agreement was reached at the woreda mediation.' }).success, true);
+  assert.equal(grievanceEscalationSchema.safeParse({ reason: '' }).success, false);
+});
+
+test('settlement creation requires a unique delivery reference, positive volume, and supported payout channel', () => {
+  const settlement = {
+    contractId: 'CTR-2026-001',
+    deliveryReference: 'DEL-0001',
+    deliveredKg: 4200,
+    disbursementChannel: 'Telebirr',
+  };
+  assert.equal(settlementCreateSchema.safeParse(settlement).success, true);
+  assert.equal(settlementCreateSchema.safeParse({ ...settlement, deliveredKg: 0 }).success, false);
+  assert.equal(settlementCreateSchema.safeParse({ ...settlement, disbursementChannel: 'Cash' }).success, false);
 });

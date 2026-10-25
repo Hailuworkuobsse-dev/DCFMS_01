@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from './store/useAppStore';
 import { api } from './lib/api/client';
 import { AppShell } from './components/shell/AppShell';
@@ -15,53 +16,72 @@ import { GrievancesPage } from './features/grievances/GrievancesPage';
 import { ReportsPage } from './features/reports/ReportsPage';
 import { AdminPage } from './features/admin/AdminPage';
 import { ComponentCatalogPage } from './features/storybook/ComponentCatalogPage';
-import { LoadingState } from './components/primitives/States';
+import { LoadingState, NotFoundState } from './components/primitives/States';
 import { ProtectedRoute } from './components/primitives/PermissionGate';
+import type { PermissionScope, PermissionString } from './types/api';
+
+function getRoutePermissions(path: string, scope: PermissionScope | undefined): PermissionString[] {
+  if (!scope) return [];
+  if (path === '/dashboard' || path === '/storybook') return [`dashboard:read:${scope}`];
+  if (path === '/contracts/new') return [`contract:create:${scope}`];
+  if (path === '/contracts' || path.startsWith('/contracts/')) return [`contract:read:${scope}`];
+  if (path === '/linkage') return [`linkage:read:${scope}`];
+  if (path === '/inputs') return [`input_voucher:read:${scope}`];
+  if (path === '/finance') {
+    return [`loan:read:${scope}`, `insurance:read:${scope}`, `settlement:read:${scope}`];
+  }
+  if (path === '/monitoring') return [`monitoring:read:${scope}`];
+  if (path === '/grievances') return [`grievance:read:${scope}`];
+  if (path === '/reports') return [`report:read:${scope}`];
+  if (path === '/admin') return [`user:read:${scope}`];
+  return [];
+}
 
 export default function App() {
-  const { isAuthenticated, setSession, setAuthChecked } = useAppStore();
-  const [currentPath, setCurrentPath] = useState<string>(
-    window.location.pathname === '/' ? '/dashboard' : window.location.pathname
-  );
+  const { user, activeScope, setSession, setAuthChecked } = useAppStore();
+  const location = useLocation();
+  const routerNavigate = useNavigate();
+  const currentPath = location.pathname === '/' ? '/dashboard' : location.pathname;
   const [isInitializing, setIsInitializing] = useState(true);
-
-  // Sync route on popstate
-  useEffect(() => {
-    const handlePopState = () => {
-      setCurrentPath(window.location.pathname || '/dashboard');
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  const [initializationError, setInitializationError] = useState<string | null>(null);
 
   const navigate = (path: string) => {
-    window.history.pushState({}, '', path);
-    setCurrentPath(path);
+    routerNavigate(path);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Check auth session
   useEffect(() => {
+    let mounted = true;
     const checkAuth = async () => {
+      let restoredSession = false;
       try {
         const res = await api.auth.me();
         if (res.user) {
+          restoredSession = true;
           setSession(res.user, res.permissions);
-        } else {
-          // If no active session, auto-login with default persona for smooth prototype evaluation
-          const loginRes = await api.auth.login('superadmin@ati.gov.et', 'ati2025!');
-          setSession(loginRes.user, loginRes.permissions);
         }
       } catch (err) {
-        // Fallback for offline mode or network errors
-        console.warn('Auth check fallback:', err);
+        console.error('Unable to restore the DCFMS session:', err);
+        if (mounted) {
+          setInitializationError(
+            'We could not verify your session. Check your connection and sign in again.'
+          );
+        }
       } finally {
-        setAuthChecked(true);
-        setIsInitializing(false);
+        if (mounted) {
+          setAuthChecked(true);
+          setIsInitializing(false);
+          if (!restoredSession && location.pathname !== '/login') {
+            routerNavigate('/login', { replace: true });
+          }
+        }
       }
     };
-    checkAuth();
-  }, [setSession, setAuthChecked]);
+    void checkAuth();
+    return () => {
+      mounted = false;
+    };
+  }, [setSession, setAuthChecked, location.pathname, routerNavigate]);
 
   if (isInitializing) {
     return (
@@ -71,15 +91,22 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated && currentPath === '/login') {
-    return <LoginPage onSuccess={() => navigate('/dashboard')} />;
+  if (!user || currentPath === '/login') {
+    if (user && currentPath === '/login') {
+      return <Navigate to="/dashboard" replace />;
+    }
+    return (
+      <LoginPage
+        onSuccess={() => {
+          setInitializationError(null);
+          navigate('/dashboard');
+        }}
+        initialError={initializationError}
+      />
+    );
   }
 
   const renderContent = () => {
-    if (currentPath === '/login') {
-      return <LoginPage onSuccess={() => navigate('/dashboard')} />;
-    }
-
     if (currentPath === '/dashboard') {
       return <DashboardRouterPage onNavigate={navigate} />;
     }
@@ -129,13 +156,16 @@ export default function App() {
       return <ComponentCatalogPage />;
     }
 
-    // Default to dashboard
-    return <DashboardRouterPage onNavigate={navigate} />;
+    return <NotFoundState />;
   };
+
+  const requiredPermissions = getRoutePermissions(currentPath, activeScope?.scopeType);
 
   return (
     <AppShell currentPath={currentPath} onNavigate={navigate}>
-      <ProtectedRoute>{renderContent()}</ProtectedRoute>
+      <ProtectedRoute requiredAnyPermissions={requiredPermissions}>
+        {renderContent()}
+      </ProtectedRoute>
     </AppShell>
   );
 }

@@ -3,14 +3,22 @@ import { initReactI18next } from 'react-i18next';
 import { enTranslations } from './en';
 import { amTranslations } from './am';
 
-const savedLang = typeof window !== 'undefined' ? localStorage.getItem('dcfms_locale') || 'en' : 'en';
+const storedLang = (() => {
+  if (typeof window === 'undefined') return 'en';
+  try {
+    return window.localStorage.getItem('dcfms_locale') === 'am' ? 'am' : 'en';
+  } catch (error) {
+    console.warn('Unable to restore the saved language preference:', error);
+    return 'en';
+  }
+})();
 
 void i18n.use(initReactI18next).init({
   resources: {
     en: { translation: enTranslations },
     am: { translation: amTranslations },
   },
-  lng: savedLang,
+  lng: storedLang,
   fallbackLng: 'en',
   interpolation: {
     escapeValue: false,
@@ -18,13 +26,18 @@ void i18n.use(initReactI18next).init({
 });
 
 if (typeof document !== 'undefined') {
-  document.documentElement.lang = savedLang;
+  document.documentElement.lang = storedLang;
 }
 
 i18n.on('languageChanged', (lng) => {
   if (typeof window !== 'undefined') {
-    localStorage.setItem('dcfms_locale', lng);
-    document.documentElement.lang = lng;
+    const language = lng === 'am' ? 'am' : 'en';
+    try {
+      window.localStorage.setItem('dcfms_locale', language);
+    } catch (error) {
+      console.warn('Unable to persist the language preference:', error);
+    }
+    document.documentElement.lang = language;
   }
 });
 

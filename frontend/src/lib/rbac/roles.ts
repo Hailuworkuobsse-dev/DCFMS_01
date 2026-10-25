@@ -1,11 +1,17 @@
-import type { PermissionResource, PermissionAction, PermissionString, RoleId } from '../../types/api';
+import type {
+  PermissionResource,
+  PermissionAction,
+  PermissionScope,
+  PermissionString,
+  RoleId,
+} from '../../types/api';
 export type { RoleId };
 
 export interface RoleDefinition {
   id: RoleId;
   labelKey: string;
   defaultRoute: string;
-  defaultScope: string;
+  defaultScope: PermissionScope;
   dashboardComponent: string;
   permissions: PermissionString[];
 }
@@ -121,17 +127,17 @@ export const ROLE_REGISTRY: Record<RoleId, RoleDefinition> = {
     id: 'KebeleOfficer',
     labelKey: 'roles.KebeleOfficer',
     defaultRoute: '/dashboard',
-    defaultScope: 'woreda',
+    defaultScope: 'kebele',
     dashboardComponent: 'KebeleOfficerDashboard',
     permissions: [
-      'dashboard:read:woreda',
-      'contract:read:woreda',
-      'linkage:read:woreda',
-      'linkage:create:woreda',
-      'monitoring:create:woreda',
-      'monitoring:read:woreda',
-      'grievance:create:woreda',
-      'grievance:read:woreda',
+      'dashboard:read:kebele',
+      'contract:read:kebele',
+      'linkage:read:kebele',
+      'linkage:create:kebele',
+      'monitoring:create:kebele',
+      'monitoring:read:kebele',
+      'grievance:create:kebele',
+      'grievance:read:kebele',
     ],
   },
   MoTRIOfficer: {
@@ -202,6 +208,8 @@ export const ROLE_REGISTRY: Record<RoleId, RoleDefinition> = {
       'contract:read:org',
       'contract:update:org',
       'contract:sign:org',
+      'contractor:create:org',
+      'contractor:update:org',
       'document:create:org',
       'document:read:org',
       'linkage:create:org',
@@ -209,6 +217,7 @@ export const ROLE_REGISTRY: Record<RoleId, RoleDefinition> = {
       'input_voucher:create:org',
       'input_voucher:read:org',
       'settlement:read:org',
+      'settlement:create:org',
       'loan:read:org',
       'insurance:read:org',
       'insurance:create:org',
@@ -339,6 +348,52 @@ export const ROLE_REGISTRY: Record<RoleId, RoleDefinition> = {
   },
 };
 
+const ROLE_ALIASES: Record<string, RoleId> = {
+  producer: 'ProducerIndividual',
+  farmer: 'ProducerIndividual',
+  farmerindividual: 'ProducerIndividual',
+  farmeroutgrower: 'ProducerIndividual',
+  moa: 'MoAFederal',
+  rboa: 'RBoARegional',
+  wboa: 'WBoAWoreda',
+  cooperative: 'ProducerCooperative',
+  cooperativeclerk: 'ProducerCooperative',
+  primarycooperative: 'ProducerCooperative',
+  cooperativeunion: 'ProducerCooperative',
+  union: 'ProducerCooperative',
+  fpc: 'ProducerCooperative',
+  abc: 'ProducerCooperative',
+  intermediary: 'ProducerCooperative',
+  contractoragroprocessor: 'Contractor',
+  contractorexporter: 'Contractor',
+  offtaker: 'Contractor',
+  buyer: 'Contractor',
+  agroprocessor: 'Contractor',
+  exporter: 'Contractor',
+  commercialbank: 'FinancialInstitution',
+  bank: 'FinancialInstitution',
+  mfi: 'FinancialInstitution',
+  fi: 'FinancialInstitution',
+  inputsupplier: 'AgroDealer',
+  da: 'FieldAgent',
+  kebeleda: 'KebeleOfficer',
+  extensionagent: 'FieldAgent',
+  agronomist: 'FieldAgent',
+  motrfederal: 'MoTRIOfficer',
+  rcoparegional: 'ECCOfficer',
+  courtjudge: 'JusticeOfficer',
+  complianceofficer: 'Auditor',
+};
+
+export function resolveRoleId(value: string): RoleId | null {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const canonicalRoleId = (Object.keys(ROLE_REGISTRY) as RoleId[]).find(
+    (roleId) => roleId.toLowerCase() === normalized
+  );
+  if (canonicalRoleId) return canonicalRoleId;
+  return ROLE_ALIASES[normalized] ?? null;
+}
+
 export interface NavItemConfig {
   id: string;
   labelKey: string;
@@ -347,6 +402,7 @@ export interface NavItemConfig {
   category: 'operations' | 'finance' | 'reports' | 'admin';
   requiredResource: PermissionResource;
   requiredAction: PermissionAction;
+  requiredAnyPermissions?: PermissionString[];
 }
 
 export const NAV_REGISTRY: NavItemConfig[] = [
@@ -394,6 +450,14 @@ export const NAV_REGISTRY: NavItemConfig[] = [
     category: 'finance',
     requiredResource: 'loan',
     requiredAction: 'read',
+    requiredAnyPermissions: [
+      'loan:read:own', 'loan:read:org', 'loan:read:kebele', 'loan:read:woreda',
+      'loan:read:zonal', 'loan:read:region', 'loan:read:federal', 'loan:read:all',
+      'insurance:read:own', 'insurance:read:org', 'insurance:read:kebele', 'insurance:read:woreda',
+      'insurance:read:zonal', 'insurance:read:region', 'insurance:read:federal', 'insurance:read:all',
+      'settlement:read:own', 'settlement:read:org', 'settlement:read:kebele', 'settlement:read:woreda',
+      'settlement:read:zonal', 'settlement:read:region', 'settlement:read:federal', 'settlement:read:all',
+    ],
   },
   {
     id: 'nav-monitoring',

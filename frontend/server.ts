@@ -5,6 +5,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
 import { createInitialSeedDatabase } from './src/server/seedData';
+import { ROLE_REGISTRY, resolveRoleId } from './src/lib/rbac/roles';
 import {
   getActiveRole,
   hasResourceAction,
@@ -14,11 +15,15 @@ import {
   contractWizardSchema,
   contractorCompetencySchema,
   grievanceIntakeSchema,
+  grievanceEscalationSchema,
+  grievanceResolutionSchema,
   linkageApplicationSchema,
   loanApplicationSchema,
+  loanDecisionSchema,
   loginSchema,
   monitoringReportSchema,
   otpSignatureSchema,
+  settlementCreateSchema,
   userCreateSchema,
   voucherIssueSchema,
   voucherRedeemSchema,
@@ -45,6 +50,7 @@ const __dirname = path.dirname(__filename);
 const db = createInitialSeedDatabase();
 const sessions = new Map<string, string>(); // sessionToken -> userId
 const COOKIE_NAME = 'dcfms_session';
+const isDevelopment = process.env.NODE_ENV === 'development';
 
 function createAuditEntry(
   user: AuthUser,
@@ -80,25 +86,30 @@ function createAuditEntry(
 }
 
 function getEffectiveUserPermissions(user: AuthUser): PermissionString[] {
-  const role = getActiveRole(user) ?? user.primaryRole;
+  const activeScope = user.scopedRoles.find((s) => s.id === user.activeScopeId);
+  if (!activeScope) return [];
+  const role = activeScope.roleId;
   return db.rolePermissionsMatrix[role] ?? [];
 }
 
 function getActiveScopeInfo(user: AuthUser) {
-  const activeScope = user.scopedRoles.find((s) => s.id === user.activeScopeId) ?? user.scopedRoles[0];
+  const activeScope = user.scopedRoles.find((s) => s.id === user.activeScopeId);
   return {
-    roleId: activeScope ? activeScope.roleId : user.primaryRole,
+    roleId: activeScope?.roleId ?? user.primaryRole,
     scopeType: activeScope?.scopeType ?? 'own',
     scopeLabel: activeScope?.scopeLabel ?? user.orgName ?? 'Personal Scope',
-    region: activeScope?.region ?? user.region,
-    woreda: activeScope?.woreda ?? user.woreda,
-    orgId: activeScope?.orgId ?? user.orgId,
+    region: activeScope?.region,
+    woreda: activeScope?.woreda,
+    kebele: activeScope?.kebele,
+    orgId: activeScope?.orgId ?? (activeScope?.scopeType === 'org' ? user.orgId : undefined),
   };
 }
 
 function scopeContractsForUser(user: AuthUser): Contract[] {
   const scope = getActiveScopeInfo(user);
   const role = scope.roleId;
+  const activeScope = user.scopedRoles.find((s) => s.id === user.activeScopeId);
+  if (!activeScope) return [];
 
   if (
     role === 'ATISuperAdmin' ||
@@ -114,22 +125,123 @@ function scopeContractsForUser(user: AuthUser): Contract[] {
   if (role === 'MoTRIOfficer') {
     return db.contracts.filter((c) => c.exportOriented);
   }
-  if (role === 'RBoARegional' && scope.region) {
+  if (scope.scopeType === 'region' && scope.region) {
     return db.contracts.filter((c) => c.region === scope.region);
   }
-  if ((role === 'WBoAWoreda' || role === 'KebeleOfficer' || role === 'FieldAgent') && scope.woreda) {
-    return db.contracts.filter((c) => c.woreda === scope.woreda || c.region === scope.region);
+  if (scope.scopeType === 'woreda' && scope.woreda) {
+    return db.contracts.filter((c) => c.woreda === scope.woreda);
   }
-  if (role === 'Contractor' && scope.orgId) {
+  if (scope.scopeType === 'kebele' && scope.woreda && scope.kebele) {
+    return db.contracts.filter((c) => c.woreda === scope.woreda && c.kebele === scope.kebele);
+  }
+  if (scope.scopeType === 'org' && role === 'Contractor' && scope.orgId) {
     return db.contracts.filter((c) => c.contractorOrgId === scope.orgId);
   }
-  if (role === 'ProducerCooperative' && scope.orgId) {
+  if (scope.scopeType === 'org' && role === 'ProducerCooperative' && scope.orgId) {
     return db.contracts.filter((c) => c.producerId === scope.orgId);
   }
-  if (role === 'ProducerIndividual') {
+  if (scope.scopeType === 'org' && role === 'FinancialInstitution') {
+    return [];
+  }
+  if (scope.scopeType === 'own' && role === 'ProducerIndividual') {
     return db.contracts.filter((c) => c.producerId === user.id);
   }
-  return db.contracts;
+  return [];
+}
+
+function scopeLinkagesForUser(user: AuthUser): LinkageRequest[] {
+  const scope = getActiveScopeInfo(user);
+  if (scope.scopeType === 'all' || scope.scopeType === 'federal') return db.linkages;
+  if (scope.scopeType === 'region' || scope.scopeType === 'zonal') return [];
+  if (scope.scopeType === 'kebele' && scope.woreda && scope.kebele) {
+    return db.linkages.filter((item) => item.woreda === scope.woreda && item.kebele === scope.kebele);
+  }
+  if (scope.scopeType === 'woreda' && scope.woreda) {
+    return db.linkages.filter((item) => item.woreda === scope.woreda);
+  }
+  if (scope.scopeType === 'org' && scope.orgId) {
+    return db.linkages.filter((item) =>
+      item.buyerOrgId === scope.orgId || item.createdByOrgId === scope.orgId
+    );
+  }
+  return [];
+}
+
+function scopedContractIds(user: AuthUser): Set<string> {
+  return new Set(scopeContractsForUser(user).map((contract) => contract.id));
+}
+
+function scopeVouchersForUser(user: AuthUser): InputVoucher[] {
+  const scope = getActiveScopeInfo(user);
+  if (scope.scopeType === 'all' || scope.scopeType === 'federal') return db.vouchers;
+  if (scope.scopeType === 'org' && scope.roleId === 'AgroDealer' && scope.orgId) {
+    return db.vouchers.filter((voucher) => voucher.assignedDealerOrgId === scope.orgId);
+  }
+  if (scope.scopeType === 'own' && scope.roleId === 'ProducerIndividual') {
+    return db.vouchers.filter((voucher) => voucher.beneficiaryFaydaId === user.faydaId);
+  }
+  const contractIds = scopedContractIds(user);
+  return db.vouchers.filter((voucher) => contractIds.has(voucher.contractId));
+}
+
+function scopeLoansForUser(user: AuthUser): LoanApplication[] {
+  const scope = getActiveScopeInfo(user);
+  if (scope.scopeType === 'all' || scope.scopeType === 'federal') return db.loans;
+  if (scope.scopeType === 'org' && scope.orgId && scope.roleId === 'FinancialInstitution') {
+    return db.loans.filter((loan) => loan.fiOrgId === scope.orgId);
+  }
+  if (scope.scopeType === 'own' && user.faydaId) {
+    return db.loans.filter((loan) => loan.applicantFaydaId === user.faydaId);
+  }
+  const contractIds = scopedContractIds(user);
+  return db.loans.filter((loan) => contractIds.has(loan.contractId));
+}
+
+function scopeInsuranceForUser(user: AuthUser) {
+  const scope = getActiveScopeInfo(user);
+  if (scope.scopeType === 'all' || scope.scopeType === 'federal') return db.insurances;
+  if (scope.scopeType === 'org' && scope.orgId && scope.roleId === 'Insurer') {
+    return db.insurances.filter((policy) => policy.insurerOrgId === scope.orgId);
+  }
+  const contractIds = scopedContractIds(user);
+  return db.insurances.filter((policy) => contractIds.has(policy.contractId));
+}
+
+function scopeSettlementsForUser(user: AuthUser) {
+  const scope = getActiveScopeInfo(user);
+  if (scope.scopeType === 'all' || scope.scopeType === 'federal') return db.settlements;
+  if (scope.scopeType === 'org' && scope.roleId === 'FinancialInstitution' && scope.orgId) {
+    const loanContractIds = new Set(
+      db.loans
+        .filter((loan) => loan.fiOrgId === scope.orgId)
+        .map((loan) => loan.contractId)
+    );
+    return db.settlements.filter(
+      (settlement) => settlement.fiOrgId === scope.orgId || loanContractIds.has(settlement.contractId)
+    );
+  }
+  const contractIds = scopedContractIds(user);
+  return db.settlements.filter((settlement) => contractIds.has(settlement.contractId));
+}
+
+function scopeMonitoringForUser(user: AuthUser): MonitoringReport[] {
+  const scope = getActiveScopeInfo(user);
+  if (scope.scopeType === 'all' || scope.scopeType === 'federal') return db.monitoring;
+  const contractIds = scopedContractIds(user);
+  return db.monitoring.filter(
+    (report) => contractIds.has(report.contractId) || report.agentId === user.id
+  );
+}
+
+function scopeGrievancesForUser(user: AuthUser): GrievanceCase[] {
+  const scope = getActiveScopeInfo(user);
+  if (scope.scopeType === 'all' || scope.scopeType === 'federal') return db.grievances;
+  const contractIds = scopedContractIds(user);
+  return db.grievances.filter((grievance) => contractIds.has(grievance.contractId));
+}
+
+function canAccessContract(user: AuthUser, contract: Contract): boolean {
+  return scopeContractsForUser(user).some((scoped) => scoped.id === contract.id);
 }
 
 interface AuthedRequest extends Request {
@@ -169,8 +281,9 @@ function requireResourceAction(resource: PermissionResource, action: PermissionA
       res.status(401).json({ code: 'UNAUTHORIZED', messageKey: 'errors.unauthorized' });
       return;
     }
+    const activeScope = req.user.scopedRoles.find((scope) => scope.id === req.user!.activeScopeId);
     const perms = getEffectiveUserPermissions(req.user);
-    if (!hasResourceAction(perms, resource, action)) {
+    if (!activeScope || !hasResourceAction(perms, resource, action, activeScope.scopeType)) {
       res.status(403).json({
         code: 'FORBIDDEN',
         messageKey: 'errors.forbidden',
@@ -181,6 +294,43 @@ function requireResourceAction(resource: PermissionResource, action: PermissionA
   };
 }
 
+function requireAnyResourceAction(
+  requirements: Array<{ resource: PermissionResource; action: PermissionAction }>
+) {
+  return (req: AuthedRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      res.status(401).json({ code: 'UNAUTHORIZED', messageKey: 'errors.unauthorized' });
+      return;
+    }
+    const activeScope = req.user.scopedRoles.find((scope) => scope.id === req.user!.activeScopeId);
+    const permissions = getEffectiveUserPermissions(req.user);
+    const allowed = activeScope && requirements.some(({ resource, action }) =>
+      hasResourceAction(permissions, resource, action, activeScope.scopeType)
+    );
+    if (!allowed) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    next();
+  };
+}
+
+function isWithinActiveLocation(
+  user: AuthUser,
+  location: { region?: string; woreda?: string; kebele?: string }
+): boolean {
+  const scope = getActiveScopeInfo(user);
+  if (scope.scopeType === 'all' || scope.scopeType === 'federal') return true;
+  if (scope.scopeType === 'region') return !!scope.region && location.region === scope.region;
+  if (scope.scopeType === 'woreda') return !!scope.woreda && location.woreda === scope.woreda;
+  if (scope.scopeType === 'kebele') {
+    return !!scope.woreda && !!scope.kebele &&
+      location.woreda === scope.woreda && location.kebele === scope.kebele;
+  }
+  if (scope.scopeType === 'org') return !!scope.orgId;
+  return false;
+}
+
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '5mb' }));
@@ -189,6 +339,10 @@ async function startServer() {
 
   // --- AUTH ENDPOINTS ---
   app.get('/api/auth/demo-accounts', (_req, res) => {
+    if (!isDevelopment) {
+      res.status(404).json({ code: 'NOT_FOUND' });
+      return;
+    }
     res.json({
       accounts: db.users.map((u) => ({
         id: u.id,
@@ -203,6 +357,10 @@ async function startServer() {
   });
 
   app.post('/api/auth/login', (req: AuthedRequest, res: Response) => {
+    if (!isDevelopment) {
+      res.status(503).json({ code: 'AUTH_PROVIDER_UNCONFIGURED', messageKey: 'errors.authUnavailable' });
+      return;
+    }
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
@@ -222,7 +380,7 @@ async function startServer() {
     const user = db.users.find((u) => u.email.toLowerCase() === email);
     const expectedPwd = db.passwordsByEmail[email];
 
-    if (!user || expectedPwd !== parsed.data.password) {
+    if (!user || expectedPwd !== parsed.data.password || !user.scopedRoles.some((scope) => scope.id === user.activeScopeId)) {
       res.status(401).json({
         code: 'INVALID_CREDENTIALS',
         messageKey: 'errors.unauthorized',
@@ -249,42 +407,19 @@ async function startServer() {
     });
   });
 
-  app.post('/api/auth/quick-role', (req: AuthedRequest, res: Response) => {
-    const { roleId } = req.body as { roleId?: RoleId };
-    const user = db.users.find((u) => u.primaryRole === roleId);
-    if (!user) {
-      res.status(404).json({ code: 'NOT_FOUND', messageKey: 'errors.unauthorized' });
-      return;
-    }
-
-    const sessionToken = crypto.randomBytes(24).toString('hex');
-    sessions.set(sessionToken, user.id);
-    user.lastLoginAt = new Date().toISOString();
-
-    res.cookie(COOKIE_NAME, sessionToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 1000 * 60 * 60 * 12,
-    });
-
-    res.json({
-      user,
-      permissions: getEffectiveUserPermissions(user),
-    });
-  });
-
   app.post('/api/auth/switch-scope', requireAuth, (req: AuthedRequest, res: Response) => {
     const user = req.user!;
-    const { scopeId } = req.body as { scopeId: string };
+    const { scopeId } = req.body as { scopeId?: string };
+    if (!scopeId) {
+      res.status(400).json({ code: 'BAD_REQUEST', messageKey: 'errors.validationFailed' });
+      return;
+    }
     const exists = user.scopedRoles.find((s) => s.id === scopeId);
     if (!exists) {
       res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
       return;
     }
     user.activeScopeId = scopeId;
-    if (exists.region) user.region = exists.region;
-    if (exists.woreda) user.woreda = exists.woreda;
     createAuditEntry(user, 'auth:switch_scope', 'user', user.id, `Switched active scope to ${exists.scopeLabel}`);
     res.json({
       user,
@@ -311,7 +446,7 @@ async function startServer() {
   });
 
   // --- GLOBAL SEARCH ---
-  app.get('/api/search', requireAuth, (req: AuthedRequest, res: Response) => {
+  app.get('/api/search', requireResourceAction('contract', 'read'), (req: AuthedRequest, res: Response) => {
     const q = String(req.query.q ?? '').trim().toLowerCase();
     if (!q) {
       res.json({ results: [] });
@@ -338,7 +473,8 @@ async function startServer() {
   });
 
   // --- NOTIFICATIONS ---
-  app.get('/api/notifications', requireAuth, (_req: AuthedRequest, res: Response) => {
+  app.get('/api/notifications', requireAuth, (req: AuthedRequest, res: Response) => {
+    const contractIds = scopedContractIds(req.user!);
     res.json({
       notifications: [
         {
@@ -368,12 +504,15 @@ async function startServer() {
           unread: false,
           route: '/grievances',
         },
-      ],
+      ].filter((notification) => {
+        const id = notification.route.split('/').pop();
+        return id && contractIds.has(id);
+      }),
     });
   });
 
   // --- DASHBOARDS ROUTER DATA ---
-  app.get('/api/dashboard', requireAuth, (req: AuthedRequest, res: Response) => {
+  app.get('/api/dashboard', requireResourceAction('dashboard', 'read'), (req: AuthedRequest, res: Response) => {
     const user = req.user!;
     const scopeInfo = getActiveScopeInfo(user);
     const role = scopeInfo.roleId;
@@ -437,17 +576,26 @@ async function startServer() {
         { name: 'Durum Wheat', value: scopedContracts.filter((c) => c.commodity === 'Durum Wheat').length || 1 },
       ],
       contracts: scopedContracts,
-      linkages: db.linkages,
-      vouchers: db.vouchers,
-      loans: db.loans,
-      insurances: db.insurances,
-      settlements: db.settlements,
-      monitoring: db.monitoring,
-      grievances: db.grievances,
-      integrations: db.integrations,
-      auditLogs: db.auditLogs.slice(0, 12),
-      usersCount: db.users.length,
-      competencyApps: db.competencyApps,
+      linkages: scopeLinkagesForUser(user),
+      vouchers: scopeVouchersForUser(user),
+      loans: scopeLoansForUser(user),
+      insurances: scopeInsuranceForUser(user),
+      settlements: scopeSettlementsForUser(user),
+      monitoring: scopeMonitoringForUser(user),
+      grievances: scopeGrievancesForUser(user),
+      integrations: hasResourceAction(getEffectiveUserPermissions(user), 'integration', 'read', scopeInfo.scopeType)
+        ? db.integrations
+        : [],
+      auditLogs: (role === 'ATISuperAdmin' || role === 'SystemAdmin' || role === 'Auditor'
+        ? db.auditLogs
+        : db.auditLogs.filter((entry) => entry.actorId === user.id || scopedContracts.some((contract) => contract.id === entry.resourceId))
+      ).slice(0, 12),
+      usersCount: hasResourceAction(getEffectiveUserPermissions(user), 'user', 'read', scopeInfo.scopeType)
+        ? db.users.length
+        : 0,
+      competencyApps: role === 'EAAOfficer' || role === 'ATISuperAdmin' || role === 'SystemAdmin'
+        ? db.competencyApps
+        : db.competencyApps.filter((application) => application.contractorOrgId === scopeInfo.orgId),
     };
 
     res.json(payload);
@@ -485,14 +633,28 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
       return;
     }
+    const activeScope = getActiveScopeInfo(req.user!);
+    const permissions = getEffectiveUserPermissions(req.user!);
     res.json({
       contract,
-      vouchers: db.vouchers.filter((v) => v.contractId === contract.id),
-      loans: db.loans.filter((l) => l.contractId === contract.id),
-      settlements: db.settlements.filter((s) => s.contractId === contract.id),
-      monitoring: db.monitoring.filter((m) => m.contractId === contract.id),
-      grievances: db.grievances.filter((g) => g.contractId === contract.id),
-      auditLogs: db.auditLogs.filter((a) => a.resourceId === contract.id),
+      vouchers: hasResourceAction(permissions, 'input_voucher', 'read', activeScope.scopeType)
+        ? scopeVouchersForUser(req.user!).filter((v) => v.contractId === contract.id)
+        : [],
+      loans: hasResourceAction(permissions, 'loan', 'read', activeScope.scopeType)
+        ? scopeLoansForUser(req.user!).filter((l) => l.contractId === contract.id)
+        : [],
+      settlements: hasResourceAction(permissions, 'settlement', 'read', activeScope.scopeType)
+        ? scopeSettlementsForUser(req.user!).filter((s) => s.contractId === contract.id)
+        : [],
+      monitoring: hasResourceAction(permissions, 'monitoring', 'read', activeScope.scopeType)
+        ? scopeMonitoringForUser(req.user!).filter((m) => m.contractId === contract.id)
+        : [],
+      grievances: hasResourceAction(permissions, 'grievance', 'read', activeScope.scopeType)
+        ? scopeGrievancesForUser(req.user!).filter((g) => g.contractId === contract.id)
+        : [],
+      auditLogs: hasResourceAction(permissions, 'audit_log', 'read', activeScope.scopeType)
+        ? db.auditLogs.filter((a) => a.resourceId === contract.id)
+        : [],
     });
   });
 
@@ -570,6 +732,10 @@ async function startServer() {
         res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
         return;
       }
+      if (!canAccessContract(req.user!, contract)) {
+        res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+        return;
+      }
       if (contract.status !== 'Draft') {
         res.status(409).json({ code: 'CONFLICT', messageKey: 'contracts.alreadySignedTooltip' });
         return;
@@ -618,6 +784,10 @@ async function startServer() {
         res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
         return;
       }
+      if (!canAccessContract(req.user!, contract)) {
+        res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+        return;
+      }
 
       const parsed = contractDecisionSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -626,6 +796,19 @@ async function startServer() {
       }
 
       const { action, reason, notes } = parsed.data;
+      const activeScope = getActiveScopeInfo(req.user!);
+      if (
+        action === 'reject' &&
+        !hasResourceAction(
+          getEffectiveUserPermissions(req.user!),
+          'contract',
+          'reject',
+          activeScope.scopeType
+        )
+      ) {
+        res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+        return;
+      }
       if (action === 'approve') {
         contract.status = 'Approved';
         contract.approvals.woredaApprovedBy = req.user!.fullName;
@@ -657,6 +840,10 @@ async function startServer() {
         res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
         return;
       }
+      if (!canAccessContract(req.user!, contract)) {
+        res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+        return;
+      }
       contract.ecxVerified = true;
       contract.updatedAt = new Date().toISOString();
 
@@ -673,10 +860,16 @@ async function startServer() {
   );
 
   // --- LINKAGE & CLUSTERING ---
-  app.get('/api/linkage', requireResourceAction('linkage', 'read'), (_req, res) => {
+  app.get('/api/linkage', requireResourceAction('linkage', 'read'), (req: AuthedRequest, res: Response) => {
+    const user = req.user!;
+    const items = scopeLinkagesForUser(user);
+    const role = getActiveScopeInfo(user).roleId;
+    const competencyApps = role === 'EAAOfficer' || role === 'ATISuperAdmin' || role === 'SystemAdmin'
+      ? db.competencyApps
+      : db.competencyApps.filter((application) => application.contractorOrgId === getActiveScopeInfo(user).orgId);
     res.json({
-      linkages: db.linkages,
-      competencyApps: db.competencyApps,
+      linkages: items,
+      competencyApps,
     });
   });
 
@@ -686,10 +879,18 @@ async function startServer() {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
     }
+    if (!isWithinActiveLocation(req.user!, parsed.data)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    const scope = getActiveScopeInfo(req.user!);
     const newLinkage: LinkageRequest = {
       id: `LNK-2026-${100 + db.linkages.length + 1}`,
       ...parsed.data,
       status: 'Open',
+      buyerOrgId: scope.roleId === 'Contractor' ? scope.orgId : undefined,
+      buyerOrgName: scope.roleId === 'Contractor' ? req.user!.orgName : undefined,
+      createdByOrgId: scope.scopeType === 'org' ? scope.orgId : undefined,
       createdAt: new Date().toISOString(),
     };
     db.linkages.unshift(newLinkage);
@@ -709,6 +910,10 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
+    if (!scopeLinkagesForUser(req.user!).some((linkage) => linkage.id === item.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
     item.status = 'Clustered';
     createAuditEntry(req.user!, 'linkage:approve:woreda', 'linkage', item.id, `Clustered linkage request ${item.id}`);
     res.json({ linkage: item });
@@ -720,6 +925,10 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
+    if (!scopeLinkagesForUser(req.user!).some((linkage) => linkage.id === item.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
     item.status = 'SupportLetterIssued';
     item.supportLetterRef = `SL/RBOA/${Date.now().toString().slice(-4)}`;
     item.supportLetterIssuedAt = new Date().toISOString();
@@ -727,7 +936,7 @@ async function startServer() {
     res.json({ linkage: item });
   });
 
-  app.post('/api/competency', (req: AuthedRequest, res: Response) => {
+  app.post('/api/competency', requireResourceAction('contractor', 'create'), (req: AuthedRequest, res: Response) => {
     const parsed = contractorCompetencySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
@@ -750,6 +959,11 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
+    const role = getActiveScopeInfo(req.user!).roleId;
+    if (!['EAAOfficer', 'ATISuperAdmin', 'SystemAdmin'].includes(role)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
     appRecord.status = 'Certified';
     appRecord.reviewedBy = req.user!.fullName;
     appRecord.reviewNotes = 'Approved following technical facility and balance sheet audit.';
@@ -758,10 +972,15 @@ async function startServer() {
   });
 
   // --- INPUTS & VOUCHERS ---
-  app.get('/api/vouchers', requireResourceAction('input_voucher', 'read'), (_req, res) => {
+  app.get('/api/vouchers', requireResourceAction('input_voucher', 'read'), (req: AuthedRequest, res: Response) => {
+    const vouchers = scopeVouchersForUser(req.user!);
+    const allowedContractIds = new Set(vouchers.map((voucher) => voucher.contractId));
+    const inventory = getActiveScopeInfo(req.user!).orgId
+      ? db.inventory.filter((item) => item.dealerOrgId === getActiveScopeInfo(req.user!).orgId)
+      : [];
     res.json({
-      vouchers: db.vouchers,
-      inventory: db.inventory,
+      vouchers,
+      inventory: allowedContractIds.size > 0 ? inventory : [],
     });
   });
 
@@ -769,6 +988,15 @@ async function startServer() {
     const parsed = voucherIssueSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
+      return;
+    }
+    const contract = db.contracts.find((item) => item.id === parsed.data.contractId);
+    if (!contract) {
+      res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
+      return;
+    }
+    if (!canAccessContract(req.user!, contract)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
       return;
     }
     const newVoucher: InputVoucher = {
@@ -804,6 +1032,11 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND', messageKey: 'errors.notFound' });
       return;
     }
+    const activeScope = getActiveScopeInfo(req.user!);
+    if (activeScope.roleId !== 'AgroDealer' || activeScope.orgId !== vch.assignedDealerOrgId) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
     if (parsed.data.otpCode !== vch.otpCode && parsed.data.otpCode !== '123456') {
       res.status(400).json({ code: 'INVALID_OTP', messageKey: 'errors.invalidOtp' });
       return;
@@ -820,17 +1053,33 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
+    if (!scopeVouchersForUser(req.user!).some((voucher) => voucher.id === vch.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
     vch.status = 'VerifiedByAgent';
     vch.verifiedByAgentAt = new Date().toISOString();
     res.json({ voucher: vch });
   });
 
   // --- FINANCE, LOANS & SETTLEMENTS ---
-  app.get('/api/finance', requireResourceAction('loan', 'read'), (_req, res) => {
+  app.get('/api/finance', requireAnyResourceAction([
+    { resource: 'loan', action: 'read' },
+    { resource: 'insurance', action: 'read' },
+    { resource: 'settlement', action: 'read' },
+  ]), (req: AuthedRequest, res: Response) => {
+    const financialInstitutions = db.users
+      .filter((user) => user.scopedRoles.some((assignment) => assignment.roleId === 'FinancialInstitution'))
+      .flatMap((user) => {
+        const orgId = user.scopedRoles.find((assignment) => assignment.roleId === 'FinancialInstitution')?.orgId;
+        return orgId && user.orgName ? [{ orgId, orgName: user.orgName }] : [];
+      })
+      .filter((institution, index, list) => list.findIndex((item) => item.orgId === institution.orgId) === index);
     res.json({
-      loans: db.loans,
-      insurances: db.insurances,
-      settlements: db.settlements,
+      loans: scopeLoansForUser(req.user!),
+      insurances: scopeInsuranceForUser(req.user!),
+      settlements: scopeSettlementsForUser(req.user!),
+      financialInstitutions,
     });
   });
 
@@ -840,16 +1089,65 @@ async function startServer() {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
     }
+    const contract = db.contracts.find((item) => item.id === parsed.data.contractId);
+    if (!contract) {
+      res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
+      return;
+    }
+    if (!canAccessContract(req.user!, contract)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    const user = req.user!;
+    const activeRole = getActiveScopeInfo(user).roleId;
+    const expectedApplicant =
+      activeRole === 'ProducerIndividual' && contract.producerType === 'Individual'
+        ? { faydaId: user.faydaId, name: user.fullName }
+        : activeRole === 'ProducerCooperative' &&
+            contract.producerType === 'Cooperative' &&
+            contract.producerId === getActiveScopeInfo(user).orgId
+          ? { faydaId: contract.producerFaydaId, name: contract.producerName }
+          : null;
+    if (!expectedApplicant?.faydaId || parsed.data.applicantFaydaId !== expectedApplicant.faydaId) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    const institution = db.users.find((candidate) =>
+      candidate.scopedRoles.some(
+        (assignment) =>
+          assignment.roleId === 'FinancialInstitution' && assignment.orgId === parsed.data.fiOrgId
+      )
+    );
+    if (!institution?.orgName) {
+      res.status(422).json({ code: 'INVALID_FINANCIAL_INSTITUTION', message: 'Select an active financial institution.' });
+      return;
+    }
+    if (parsed.data.principalEtb > contract.totalValueEtb) {
+      res.status(422).json({ code: 'EXPOSURE_LIMIT_EXCEEDED', message: 'Requested principal cannot exceed the linked contract value.' });
+      return;
+    }
+    const openLoanStatuses = ['Submitted', 'UnderAssessment', 'Approved', 'Disbursed', 'ACTIVE', 'DISBURSED', 'PENDING'];
+    if (db.loans.some(
+      (loan) =>
+        loan.contractId === contract.id &&
+        loan.applicantFaydaId === expectedApplicant.faydaId &&
+        openLoanStatuses.includes(loan.status)
+    )) {
+      res.status(409).json({ code: 'DUPLICATE_LOAN', message: 'An active loan already exists for this applicant and contract.' });
+      return;
+    }
     const newLoan: LoanApplication = {
       id: `LN-2026-${800 + db.loans.length + 1}`,
-      loanRef: `COOP-TRI-2026-${Math.floor(200 + Math.random() * 800)}`,
+      loanRef: `COOP-TRI-2026-${String(200 + db.loans.length + 1).padStart(3, '0')}`,
       contractId: parsed.data.contractId,
-      contractNumber: 'CTR-OR-2026-001',
+      contractNumber: contract.contractNumber,
       fiOrgId: parsed.data.fiOrgId,
-      fiOrgName: 'Cooperative Bank of Oromia',
-      applicantFaydaId: parsed.data.applicantFaydaId,
-      applicantName: parsed.data.applicantName,
+      fiOrgName: institution.orgName,
+      applicantFaydaId: expectedApplicant.faydaId,
+      applicantName: expectedApplicant.name,
       principalEtb: parsed.data.principalEtb,
+      outstandingPrincipalEtb: parsed.data.principalEtb,
+      cropCycle: parsed.data.cropCycle,
       interestRatePct: 9.0,
       creditScoreBand: 'A - Contract Backed',
       status: 'Submitted',
@@ -866,7 +1164,30 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
-    loan.status = 'Approved';
+    const user = req.user!;
+    if (getActiveScopeInfo(user).orgId !== loan.fiOrgId || !scopeLoansForUser(user).some((item) => item.id === loan.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    const parsed = loanDecisionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
+      return;
+    }
+    if (loan.status !== 'Submitted' && loan.status !== 'UnderAssessment') {
+      res.status(409).json({ code: 'INVALID_STATE', message: 'A decision can only be recorded for a submitted or under-assessment loan.' });
+      return;
+    }
+    loan.status = parsed.data.action === 'approve' ? 'Approved' : 'Rejected';
+    loan.decisionAt = new Date().toISOString();
+    loan.decisionReason = parsed.data.reason;
+    createAuditEntry(
+      user,
+      `loan:${parsed.data.action}:org`,
+      'loan',
+      loan.id,
+      `${parsed.data.action === 'approve' ? 'Approved' : 'Rejected'} loan ${loan.loanRef}`
+    );
     res.json({ loan });
   });
 
@@ -876,9 +1197,39 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
+    const user = req.user!;
+    if (!scopeLoansForUser(user).some((item) => item.id === loan.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    if (loan.status !== 'Approved') {
+      res.status(409).json({ code: 'INVALID_STATE', message: 'Only an approved loan can be disbursed.' });
+      return;
+    }
     loan.status = 'Disbursed';
     loan.disbursedAt = new Date().toISOString();
+    createAuditEntry(user, 'loan:update:org', 'loan', loan.id, `Disbursed loan ${loan.loanRef}`);
     res.json({ loan });
+  });
+
+  app.post('/api/settlement/:id/release', requireResourceAction('settlement', 'update'), (req: AuthedRequest, res: Response) => {
+    const record = db.settlements.find((s) => s.id === req.params.id);
+    if (!record) {
+      res.status(404).json({ code: 'NOT_FOUND' });
+      return;
+    }
+    const user = req.user!;
+    if (!scopeSettlementsForUser(user).some((item) => item.id === record.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    if (record.status !== 'PENDING') {
+      res.status(409).json({ code: 'INVALID_STATE', message: 'Only a pending settlement can be released.' });
+      return;
+    }
+    record.status = 'SETTLED';
+    createAuditEntry(user, 'settlement:update:org', 'settlement', record.id, `Released settlement ${record.settlementRef}`);
+    res.json({ settlement: record });
   });
 
   app.post('/api/settlement/:id/reconcile', requireResourceAction('settlement', 'update'), (req: AuthedRequest, res: Response) => {
@@ -887,14 +1238,23 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
+    if (!scopeSettlementsForUser(req.user!).some((item) => item.id === record.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    if (record.status !== 'SETTLED') {
+      res.status(409).json({ code: 'INVALID_STATE', message: 'Only a released settlement can be reconciled.' });
+      return;
+    }
     record.status = 'Reconciled';
+    createAuditEntry(req.user!, 'settlement:update:org', 'settlement', record.id, `Reconciled settlement ${record.settlementRef}`);
     res.json({ settlement: record });
   });
 
   // --- MONITORING ---
-  app.get('/api/monitoring', requireResourceAction('monitoring', 'read'), (_req, res) => {
+  app.get('/api/monitoring', requireResourceAction('monitoring', 'read'), (req: AuthedRequest, res: Response) => {
     res.json({
-      reports: db.monitoring,
+      reports: scopeMonitoringForUser(req.user!),
       advisories: db.advisories,
     });
   });
@@ -905,7 +1265,15 @@ async function startServer() {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
     }
-    const contract = db.contracts.find((c) => c.id === parsed.data.contractId) ?? db.contracts[0];
+    const contract = db.contracts.find((c) => c.id === parsed.data.contractId);
+    if (!contract) {
+      res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
+      return;
+    }
+    if (!canAccessContract(req.user!, contract)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
     const newReport: MonitoringReport = {
       id: `MON-2026-${310 + db.monitoring.length + 1}`,
       reportCode: `MON-ET-2026-${310 + db.monitoring.length + 1}`,
@@ -937,9 +1305,95 @@ async function startServer() {
     res.status(201).json({ report: newReport });
   });
 
+  app.post('/api/settlements', requireResourceAction('settlement', 'create'), (req: AuthedRequest, res: Response) => {
+    const parsed = settlementCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
+      return;
+    }
+    const user = req.user!;
+    const contract = db.contracts.find((item) => item.id === parsed.data.contractId);
+    if (!contract) {
+      res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
+      return;
+    }
+    if (!canAccessContract(user, contract)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    if (!['Approved', 'ACTIVE', 'IN_DELIVERY', 'Completed'].includes(contract.status)) {
+      res.status(409).json({ code: 'INVALID_STATE', message: 'A delivery can only be settled against an active or approved contract.' });
+      return;
+    }
+    if (db.settlements.some((item) => item.deliveryReference === parsed.data.deliveryReference)) {
+      res.status(409).json({ code: 'DUPLICATE_DELIVERY', message: 'This delivery reference has already been settled.' });
+      return;
+    }
+    const alreadyDeliveredKg = db.settlements
+      .filter((item) => item.contractId === contract.id)
+      .reduce((sum, item) => sum + (item.deliveredKg ?? 0), 0);
+    const contractedKg = contract.expectedQuantityQt * 100;
+    if (alreadyDeliveredKg + parsed.data.deliveredKg > contractedKg) {
+      res.status(422).json({
+        code: 'DELIVERY_EXCEEDS_CONTRACT',
+        message: `Delivered volume exceeds the remaining contracted quantity of ${Math.max(0, contractedKg - alreadyDeliveredKg)} kg.`,
+      });
+      return;
+    }
+
+    const linkedLoans = db.loans.filter(
+      (loan) => loan.contractId === contract.id && loan.status === 'Disbursed'
+    );
+    const grossAmountEtb = Math.round(
+      (parsed.data.deliveredKg / 100) * contract.agreedPriceEtbPerQt * 100
+    ) / 100;
+    let remainingToDeduct = Math.min(
+      grossAmountEtb,
+      linkedLoans.reduce((sum, loan) => sum + (loan.outstandingPrincipalEtb ?? loan.principalEtb), 0)
+    );
+    const loanDeductionEtb = remainingToDeduct;
+    for (const loan of linkedLoans) {
+      if (remainingToDeduct <= 0) break;
+      const outstanding = loan.outstandingPrincipalEtb ?? loan.principalEtb;
+      const deduction = Math.min(outstanding, remainingToDeduct);
+      loan.outstandingPrincipalEtb = outstanding - deduction;
+      remainingToDeduct -= deduction;
+    }
+
+    const nextSequence = db.settlements.length + 1;
+    const settlement = {
+      id: `SET-2026-${900 + nextSequence}`,
+      settlementRef: `SET-ETH-2026-${String(4400 + nextSequence)}`,
+      settlementNumber: `SET-2026-${String(nextSequence).padStart(4, '0')}`,
+      contractId: contract.id,
+      contractNumber: contract.contractNumber,
+      deliveryReference: parsed.data.deliveryReference,
+      fiOrgId: linkedLoans[0]?.fiOrgId,
+      producerName: contract.producerName,
+      farmerName: contract.producerName,
+      deliveredKg: parsed.data.deliveredKg,
+      grossAmountEtb,
+      loanDeductionEtb,
+      inputAdvanceDeductionEtb: 0,
+      netPayoutEtb: grossAmountEtb - loanDeductionEtb,
+      disbursementChannel: parsed.data.disbursementChannel,
+      status: 'PENDING' as const,
+      createdAt: new Date().toISOString(),
+    };
+    db.settlements.unshift(settlement);
+    createAuditEntry(
+      user,
+      'settlement:create:org',
+      'settlement',
+      settlement.id,
+      `Created settlement for delivery ${settlement.deliveryReference}`
+    );
+    res.status(201).json({ settlement });
+  });
+
   // --- GRIEVANCES ---
-  app.get('/api/grievances', requireResourceAction('grievance', 'read'), (_req, res) => {
-    res.json({ grievances: db.grievances });
+  app.get('/api/grievances', requireResourceAction('grievance', 'read'), (req: AuthedRequest, res: Response) => {
+    res.json({ grievances: scopeGrievancesForUser(req.user!) });
   });
 
   app.post('/api/grievances', requireResourceAction('grievance', 'create'), (req: AuthedRequest, res: Response) => {
@@ -948,16 +1402,29 @@ async function startServer() {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
     }
-    const contract = db.contracts.find((c) => c.id === parsed.data.contractId) ?? db.contracts[0];
+    const contract = db.contracts.find((c) => c.id === parsed.data.contractId);
+    if (!contract) {
+      res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
+      return;
+    }
+    if (!canAccessContract(req.user!, contract)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
     const newCase: GrievanceCase = {
       id: `GRV-2026-${String(db.grievances.length + 1).padStart(2, '0')}`,
-      caseNumber: `GRV-OR-2026-${Math.floor(100 + Math.random() * 900)}`,
+      caseNumber: `GRV-OR-2026-${String(100 + db.grievances.length + 1).padStart(3, '0')}`,
       contractId: contract.id,
       contractNumber: contract.contractNumber,
-      complainantName: parsed.data.complainantName,
-      complainantRole: parsed.data.complainantRole,
-      respondentName: parsed.data.respondentName,
+      complainantName: req.user!.fullName,
+      complainantRole: getActiveScopeInfo(req.user!).roleId,
+      respondentName:
+        getActiveScopeInfo(req.user!).roleId === 'Contractor'
+          ? contract.producerName
+          : contract.contractorName,
       category: parsed.data.category,
+      title: parsed.data.title,
+      severity: parsed.data.severity,
       description: parsed.data.description,
       escalationLevel: 'ContractorTier',
       slaDueAt: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
@@ -976,6 +1443,19 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
+    if (!scopeGrievancesForUser(req.user!).some((grievance) => grievance.id === item.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    const parsed = grievanceEscalationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
+      return;
+    }
+    if (item.status === 'Resolved' || item.status === 'RESOLVED' || item.status === 'DISMISSED') {
+      res.status(409).json({ code: 'INVALID_STATE', message: 'A resolved grievance cannot be escalated further.' });
+      return;
+    }
     const tiers: GrievanceCase['escalationLevel'][] = [
       'ContractorTier',
       'WoredaCommittee',
@@ -983,10 +1463,24 @@ async function startServer() {
       'CourtArbitration',
     ];
     const currentIndex = tiers.indexOf(item.escalationLevel);
-    const nextTier = tiers[Math.min(currentIndex + 1, tiers.length - 1)];
+    if (currentIndex < 0 || currentIndex === tiers.length - 1) {
+      res.status(409).json({ code: 'INVALID_STATE', message: 'This grievance is already closed.' });
+      return;
+    }
+    const requiredRoleByTier: Record<string, RoleId> = {
+      ContractorTier: 'WBoAWoreda',
+      WoredaCommittee: 'RBoARegional',
+      RegionalPanel: 'JusticeOfficer',
+    };
+    if (getActiveScopeInfo(req.user!).roleId !== requiredRoleByTier[item.escalationLevel]) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    const nextTier = tiers[currentIndex + 1];
     item.escalationLevel = nextTier;
+    item.escalationReason = parsed.data.reason;
     item.status = nextTier === 'CourtArbitration' ? 'Escalated' : 'InMediation';
-    createAuditEntry(req.user!, 'grievance:escalate:woreda', 'grievance', item.id, `Escalated case to ${nextTier}`);
+    createAuditEntry(req.user!, 'grievance:escalate:woreda', 'grievance', item.id, `Escalated case to ${nextTier}: ${parsed.data.reason}`);
     res.json({ grievance: item });
   });
 
@@ -996,9 +1490,21 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
-    const { resolutionSummary } = req.body as { resolutionSummary?: string };
+    if (!scopeGrievancesForUser(req.user!).some((grievance) => grievance.id === item.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
+      return;
+    }
+    const parsed = grievanceResolutionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
+      return;
+    }
+    if (item.status === 'Resolved' || item.status === 'RESOLVED' || item.status === 'DISMISSED') {
+      res.status(409).json({ code: 'INVALID_STATE', messageKey: 'errors.invalidState' });
+      return;
+    }
     item.status = 'Resolved';
-    item.resolutionSummary = resolutionSummary || 'Resolved via mediation';
+    item.resolutionSummary = parsed.data.resolutionSummary;
     createAuditEntry(req.user!, 'grievance:update:woreda', 'grievance', item.id, `Resolved grievance ${item.caseNumber}`);
     res.json({ grievance: item });
   });
@@ -1007,6 +1513,10 @@ async function startServer() {
     const item = db.grievances.find((g) => g.id === req.params.id);
     if (!item) {
       res.status(404).json({ code: 'NOT_FOUND' });
+      return;
+    }
+    if (!scopeGrievancesForUser(req.user!).some((grievance) => grievance.id === item.id)) {
+      res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
       return;
     }
     const { note } = req.body as { note: string };
@@ -1049,7 +1559,14 @@ async function startServer() {
       return;
     }
     const d = parsed.data;
-    const roleId = d.primaryRole as RoleId;
+    const roleId = resolveRoleId(d.primaryRole);
+    if (!roleId) {
+      res.status(422).json({ code: 'VALIDATION_ERROR', messageKey: 'errors.validationFailed', fieldErrors: { primaryRole: 'Unknown role ID' } });
+      return;
+    }
+    const scopeId = `scope-${Date.now()}`;
+    const defaultScope = ROLE_REGISTRY[roleId].defaultScope;
+    const orgId = defaultScope === 'org' ? `org-${Date.now()}` : undefined;
     const newUser: AuthUser = {
       id: `usr-${Date.now().toString().slice(-5)}`,
       email: d.email,
@@ -1057,17 +1574,19 @@ async function startServer() {
       fullNameAm: d.fullNameAm,
       faydaId: d.faydaId,
       primaryRole: roleId,
-      activeScopeId: `scope-${Date.now()}`,
+      activeScopeId: scopeId,
       scopedRoles: [
         {
-          id: `scope-${Date.now()}`,
+          id: scopeId,
           roleId,
-          scopeType: 'own',
+          scopeType: defaultScope,
           scopeLabel: d.orgName || d.woreda || 'Personal Scope',
           region: d.region,
           woreda: d.woreda,
+          orgId,
         },
       ],
+      orgId,
       region: d.region,
       woreda: d.woreda,
       orgName: d.orgName,

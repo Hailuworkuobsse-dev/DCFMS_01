@@ -113,6 +113,26 @@ export const loanApplicationSchema = z.object({
 
 export type LoanApplicationInput = z.infer<typeof loanApplicationSchema>;
 
+export const settlementCreateSchema = z.object({
+  contractId: z.string().min(1, 'validation.required'),
+  deliveryReference: z.string().trim().min(4, 'validation.required'),
+  deliveredKg: z.number().positive('validation.positiveNumber'),
+  disbursementChannel: z.enum(['Telebirr', 'CBE_Birr', 'Bank_Transfer']),
+});
+
+export const loanDecisionSchema = z.object({
+  action: z.enum(['approve', 'reject']),
+  reason: z.string().trim().min(5, 'validation.minChars8'),
+});
+
+export const grievanceEscalationSchema = z.object({
+  reason: z.string().trim().min(5, 'validation.minChars8'),
+});
+
+export const grievanceResolutionSchema = z.object({
+  resolutionSummary: z.string().trim().min(10, 'validation.minChars8'),
+});
+
 export const monitoringReportSchema = z.object({
   contractId: z.string().min(1, 'validation.required'),
   cropStage: z.enum([
@@ -138,10 +158,9 @@ export type MonitoringReportInput = z.infer<typeof monitoringReportSchema>;
 
 export const grievanceIntakeSchema = z.object({
   contractId: z.string().min(1, 'validation.required'),
-  complainantName: z.string().min(2, 'validation.required'),
-  complainantRole: z.string().min(1, 'validation.required'),
-  respondentName: z.string().min(2, 'validation.required'),
   category: z.string().min(1, 'validation.required'),
+  title: z.string().trim().min(5, 'validation.titleMin'),
+  severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
   description: z.string().min(10, 'validation.minChars8'),
 });
 

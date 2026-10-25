@@ -22,17 +22,18 @@ export const Can: React.FC<CanProps> = ({
   permission,
   resource,
   action,
-  scope = 'own',
+  scope,
   children,
   fallback = null,
 }) => {
-  const { permissions } = useAppStore();
+  const { permissions, activeScope } = useAppStore();
+  const requiredScope = scope ?? activeScope?.scopeType ?? 'own';
 
   let allowed = false;
   if (permission) {
     allowed = checkPermissionList(permissions, [permission]);
   } else if (resource && action) {
-    allowed = hasResourceAction(permissions, resource, action, scope);
+    allowed = hasResourceAction(permissions, resource, action, requiredScope);
   }
 
   if (!allowed) {
@@ -64,6 +65,7 @@ interface ProtectedRouteProps {
   roles?: RoleId[];
   anyResources?: PermissionResource[];
   action?: PermissionAction;
+  requiredAnyPermissions?: PermissionString[];
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
@@ -71,6 +73,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   roles,
   anyResources,
   action = 'read',
+  requiredAnyPermissions,
 }) => {
   const { user, permissions, authChecked } = useAppStore();
   const location = useLocation();
@@ -92,6 +95,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   if (anyResources && anyResources.length > 0) {
     const hasAny = anyResources.some((res) => hasResourceAction(permissions, res, action));
     if (!hasAny) {
+      return <ForbiddenState />;
+    }
+  }
+
+  if (requiredAnyPermissions !== undefined) {
+    const hasRequiredPermission = requiredAnyPermissions.some((permission) =>
+      checkPermissionList(permissions, [permission])
+    );
+    if (!hasRequiredPermission) {
       return <ForbiddenState />;
     }
   }

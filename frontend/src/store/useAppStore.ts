@@ -24,7 +24,6 @@ interface AppState {
   setSession: (user: AuthUser | null, permissions: PermissionString[]) => void;
   clearSession: () => void;
   logout: () => void;
-  setRole: (roleId: RoleId) => void;
   setAuthChecked: (val: boolean) => void;
   setSimulatedOffline: (val: boolean) => void;
   toggleOfflineSimulation: () => void;
@@ -39,7 +38,7 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   user: null,
   currentUser: null,
-  currentRole: 'ATISuperAdmin',
+  currentRole: 'ProducerIndividual',
   activeScope: null,
   permissions: [],
   authChecked: false,
@@ -54,8 +53,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   isAuthenticated: false,
 
   setSession: (user, permissions) => {
-    const active = user?.scopedRoles?.find((s) => s.id === user.activeScopeId) ?? user?.scopedRoles?.[0] ?? null;
-    const role = (active?.roleId ?? user?.primaryRole ?? 'ATISuperAdmin') as RoleId;
+    const active = user?.scopedRoles?.find((s) => s.id === user.activeScopeId) ?? null;
+    const role = active?.roleId ?? user?.primaryRole ?? 'ProducerIndividual';
     set({
       user,
       currentUser: user,
@@ -71,7 +70,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       user: null,
       currentUser: null,
-      currentRole: 'ATISuperAdmin',
+      currentRole: 'ProducerIndividual',
       activeScope: null,
       permissions: [],
       authChecked: true,
@@ -80,23 +79,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   logout: () => {
     get().clearSession();
-  },
-
-  setRole: (roleId: RoleId) => {
-    const { user } = get();
-    if (user) {
-      const updatedUser: AuthUser = {
-        ...user,
-        primaryRole: roleId,
-      };
-      set({
-        user: updatedUser,
-        currentUser: updatedUser,
-        currentRole: roleId,
-      });
-    } else {
-      set({ currentRole: roleId });
-    }
   },
 
   setAuthChecked: (val) => set({ authChecked: val }),
@@ -112,8 +94,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setBrowserOffline: (val) => set({ browserOffline: val, isOnline: !val }),
 
   refreshQueuedCount: async () => {
-    const list = await getQueuedMutations();
-    set({ queuedCount: list.length, queuedMutationCount: list.length });
+    try {
+      const list = await getQueuedMutations();
+      set({ queuedCount: list.length, queuedMutationCount: list.length });
+    } catch (error) {
+      console.error('Unable to read the offline submission queue:', error);
+    }
   },
 
   setQueuedMutationCount: (count) => set({ queuedCount: count, queuedMutationCount: count }),

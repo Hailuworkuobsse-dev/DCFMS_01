@@ -7,8 +7,8 @@ import type {
   LoanApplication,
   MonitoringReport,
   GrievanceCase,
+  SettlementRecord,
   AuditLogEntry,
-  RoleId,
   PermissionString,
 } from '../../types/api';
 
@@ -50,7 +50,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   });
 
   if (!res.ok) {
-    let errorData: { code?: string; messageKey?: string; fieldErrors?: Record<string, string> } = {};
+    let errorData: { code?: string; message?: string; messageKey?: string; fieldErrors?: Record<string, string> } = {};
     try {
       errorData = (await res.json()) as typeof errorData;
     } catch {
@@ -63,7 +63,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
     throw new ApiError(
       res.status,
-      errorData.messageKey || `Request failed with status ${res.status}`,
+      errorData.message || errorData.messageKey || `Request failed with status ${res.status}`,
       errorData.code,
       errorData.messageKey,
       errorData.fieldErrors
@@ -109,13 +109,11 @@ export const apiClient = {
 
 export const api = {
   auth: {
-    login: (email: string, password?: string) =>
+    login: (email: string, password: string) =>
       apiClient.post<{ user: AuthUser; permissions: PermissionString[] }>('/auth/login', {
         email,
-        password: password || 'ati2025!',
+        password,
       }),
-    quickRole: (roleId: RoleId) =>
-      apiClient.post<{ user: AuthUser; permissions: PermissionString[] }>('/auth/quick-role', { roleId }),
     switchScope: (scopeId: string) =>
       apiClient.post<{ user: AuthUser; permissions: PermissionString[] }>('/auth/switch-scope', { scopeId }),
     logout: () => apiClient.post<{ ok: boolean }>('/auth/logout'),
@@ -176,7 +174,13 @@ export const api = {
       }),
   },
   finance: {
-    list: () => apiClient.get<{ loans: LoanApplication[]; insurances: any[]; settlements: any[] }>('/finance'),
+    list: () =>
+      apiClient.get<{
+        loans: LoanApplication[];
+        insurances: any[];
+        settlements: SettlementRecord[];
+        financialInstitutions: Array<{ orgId: string; orgName: string }>;
+      }>('/finance'),
     listSettlements: async () => {
       const res = await apiClient.get<{ loans: LoanApplication[]; insurances: any[]; settlements: any[] }>('/finance');
       return { settlements: res.settlements };
@@ -185,7 +189,28 @@ export const api = {
       const res = await apiClient.get<{ loans: LoanApplication[]; insurances: any[]; settlements: any[] }>('/finance');
       return { loans: res.loans };
     },
-    applyLoan: (data: any) => apiClient.post<{ loan: LoanApplication }>('/loans/apply', data),
+    applyLoan: (data: {
+      contractId: string;
+      fiOrgId: string;
+      applicantFaydaId: string;
+      applicantName: string;
+      principalEtb: number;
+      cropCycle: string;
+    }) => apiClient.post<{ loan: LoanApplication }>('/loans/apply', data),
+    createSettlement: (data: {
+      contractId: string;
+      deliveryReference: string;
+      deliveredKg: number;
+      disbursementChannel: SettlementRecord['disbursementChannel'];
+    }) => apiClient.post<{ settlement: SettlementRecord }>('/settlements', data),
+    decideLoan: (id: string, data: { action: 'approve' | 'reject'; reason: string }) =>
+      apiClient.post<{ loan: LoanApplication }>(`/loans/${id}/decision`, data),
+    disburseLoan: (id: string) =>
+      apiClient.post<{ loan: LoanApplication }>(`/loans/${id}/disburse`),
+    releaseSettlement: (id: string) =>
+      apiClient.post<{ settlement: SettlementRecord }>(`/settlement/${id}/release`),
+    reconcileSettlement: (id: string) =>
+      apiClient.post<{ settlement: SettlementRecord }>(`/settlement/${id}/reconcile`),
   },
   monitoring: {
     list: () => apiClient.get<{ reports: MonitoringReport[]; advisories: any[] }>('/monitoring'),
@@ -193,8 +218,16 @@ export const api = {
   },
   grievances: {
     list: () => apiClient.get<{ grievances: GrievanceCase[] }>('/grievances'),
-    create: (data: any) => apiClient.post<{ grievance: GrievanceCase }>('/grievances', data),
-    resolve: (id: string, data: { resolutionNotes?: string }) =>
+    create: (data: {
+      contractId: string;
+      category: string;
+      title: string;
+      severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+      description: string;
+    }) => apiClient.post<{ grievance: GrievanceCase }>('/grievances', data),
+    escalate: (id: string, data: { reason: string }) =>
+      apiClient.post<{ grievance: GrievanceCase }>(`/grievances/${id}/escalate`, data),
+    resolve: (id: string, data: { resolutionNotes: string }) =>
       apiClient.post<{ grievance: GrievanceCase }>(`/grievances/${id}/resolve`, {
         resolutionSummary: data.resolutionNotes,
       }),

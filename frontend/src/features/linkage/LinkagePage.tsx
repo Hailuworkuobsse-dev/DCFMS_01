@@ -116,7 +116,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
           'Connecting industrial processors, exporters, and cooperatives prior to planting season'
         )}
         actions={
-          <Can permission="linkage:create:all">
+          <Can resource="linkage" action="create">
             <button
               type="button"
               onClick={() => onNavigate('/contracts/new')}
