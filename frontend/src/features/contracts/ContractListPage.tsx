@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Filter, Eye } from 'lucide-react';
+import { Plus, Filter, Eye, RefreshCw, AlertCircle, RotateCcw } from 'lucide-react';
 import { PageHeader } from '../../components/primitives/PageHeader';
 import { DataTable, Column } from '../../components/primitives/DataTable';
 import { StatusBadge } from '../../components/primitives/StatusBadge';
@@ -17,11 +17,13 @@ export const ContractListPage: React.FC<ContractListPageProps> = ({ onNavigate }
   const { t } = useTranslation();
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [commodityFilter, setCommodityFilter] = useState<string>('ALL');
 
   const fetchContracts = async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const res = await api.contracts.list({
         status: statusFilter === 'ALL' ? undefined : statusFilter,
@@ -30,6 +32,7 @@ export const ContractListPage: React.FC<ContractListPageProps> = ({ onNavigate }
       setContracts(res.contracts);
     } catch (err) {
       console.error('Failed to load contracts:', err);
+      setLoadError(err instanceof Error ? err.message : t('contracts.loadFailed', 'Unable to load contracts. Check your connection and try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -55,12 +58,12 @@ export const ContractListPage: React.FC<ContractListPageProps> = ({ onNavigate }
       header: t('contracts.commodity', 'Commodity'),
       sortable: true,
       render: (item) => {
-        const qtl = item.expectedQuantityQt || (item.quantityKg ? item.quantityKg / 100 : 200);
+        const qtl = item.expectedQuantityQt ?? (item.quantityKg ? item.quantityKg / 100 : null);
         return (
           <div>
             <p className="font-medium text-stone-900">{item.commodity}</p>
             <p className="text-[11px] text-stone-500 font-mono">
-              {item.variety || 'Standard'} • {qtl} Qtl
+              {item.variety || 'Standard'} • {qtl === null ? '—' : `${qtl} Qtl`}
             </p>
           </div>
         );
@@ -85,14 +88,14 @@ export const ContractListPage: React.FC<ContractListPageProps> = ({ onNavigate }
       header: t('contracts.price', 'Price & Escrow'),
       align: 'right',
       render: (item) => {
-        const pricePerKg = item.unitPriceEtb ?? (item.agreedPriceEtbPerQt ? item.agreedPriceEtbPerQt / 100 : 52);
+        const pricePerKg = item.unitPriceEtb ?? (item.agreedPriceEtbPerQt ? item.agreedPriceEtbPerQt / 100 : null);
         return (
           <div className="text-right">
             <p className="font-mono font-semibold text-stone-900">
-              {formatEtb(pricePerKg)} <span className="text-[10px] text-stone-500">/Kg</span>
+              {pricePerKg === null ? '—' : <>{formatEtb(pricePerKg)} <span className="text-[10px] text-stone-500">/Kg</span></>}
             </p>
             <p className="text-[11px] text-forest-700 font-mono">
-              Total {formatEtb(item.totalValueEtb)}
+              Total {item.totalValueEtb == null ? '—' : formatEtb(item.totalValueEtb)}
             </p>
           </div>
         );
@@ -117,7 +120,7 @@ export const ContractListPage: React.FC<ContractListPageProps> = ({ onNavigate }
       header: t('contracts.deliveryPeriod', 'Delivery'),
       render: (item) => (
         <span className="text-xs font-mono text-stone-500">
-          {formatShortDate(item.deliveryStartDate || item.deliveryWindowStart || '2026-08-01')}
+          {(item.deliveryStartDate || item.deliveryWindowStart) ? formatShortDate(item.deliveryStartDate || item.deliveryWindowStart || '') : '—'}
         </span>
       ),
     },
@@ -132,6 +135,10 @@ export const ContractListPage: React.FC<ContractListPageProps> = ({ onNavigate }
           'Legally binding tripartite agricultural contracts under Proclamation No. 1289/2023'
         )}
         actions={
+          <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => void fetchContracts()} disabled={isLoading} className="inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50" aria-label={t('common.refresh', 'Refresh')}>
+            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} /> {t('common.refresh', 'Refresh')}
+          </button>
           <Can resource="contract" action="create">
             <button
               type="button"
@@ -142,8 +149,16 @@ export const ContractListPage: React.FC<ContractListPageProps> = ({ onNavigate }
               <span>{t('contracts.newContract', 'Create Contract')}</span>
             </button>
           </Can>
+          </div>
         }
       />
+
+      {loadError && (
+        <div role="alert" className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><div><p className="font-semibold">{t('contracts.loadFailedTitle', 'Contracts could not be loaded')}</p><p className="mt-1 text-rose-800">{loadError}</p></div></div>
+          <button type="button" onClick={() => void fetchContracts()} className="inline-flex items-center gap-2 self-start rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-semibold hover:bg-rose-100"><RotateCcw className="h-3.5 w-3.5" />{t('common.retry', 'Retry')}</button>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-3 bg-white p-3 border border-stone-200">
@@ -180,6 +195,7 @@ export const ContractListPage: React.FC<ContractListPageProps> = ({ onNavigate }
           <option value="Soybean">Soybean</option>
           <option value="Coffee Arabica">Coffee Arabica</option>
         </select>
+        <button type="button" onClick={() => { setStatusFilter('ALL'); setCommodityFilter('ALL'); }} disabled={statusFilter === 'ALL' && commodityFilter === 'ALL'} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-stone-600 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-40"><RotateCcw className="h-3 w-3" />{t('common.clearFilters', 'Clear filters')}</button>
       </div>
 
       {/* Table */}
