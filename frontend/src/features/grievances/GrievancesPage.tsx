@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, CheckCircle2 } from 'lucide-react';
+import { Plus, CheckCircle2, RefreshCw } from 'lucide-react';
 import { PageHeader } from '../../components/primitives/PageHeader';
 import { DataTable, Column } from '../../components/primitives/DataTable';
 import { StatusBadge } from '../../components/primitives/StatusBadge';
@@ -101,6 +101,11 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
     }
   };
 
+  const resolvedGrievances = grievances.filter((item) => ['Resolved', 'RESOLVED', 'DISMISSED'].includes(String(item.status))).length;
+  const openGrievances = grievances.length - resolvedGrievances;
+  const courtEscalations = grievances.filter((item) => item.escalationLevel === 'CourtArbitration').length;
+  const resolutionRate = grievances.length ? (resolvedGrievances / grievances.length) * 100 : 0;
+
   const columns: Column<Grievance>[] = [
     {
       key: 'caseNumber',
@@ -181,6 +186,8 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
           'Statutory conciliation, tripartite mediation, and judicial adjudication under Proclamation No. 1289/2023'
         )}
         actions={
+          <div className="flex items-center gap-2">
+          <button type="button" onClick={() => void fetchGrievances()} disabled={isLoading} className="inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />{t('common.refresh', 'Refresh')}</button>
           <Can resource="grievance" action="create">
             <button
               type="button"
@@ -191,24 +198,25 @@ export const GrievancesPage: React.FC<GrievancesPageProps> = () => {
               <span>{t('grievances.fileNew', 'File Dispute')}</span>
             </button>
           </Can>
+          </div>
         }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
-          <p className="text-xs font-semibold text-stone-500 uppercase">Woreda Mediation Cases</p>
-          <p className="text-2xl font-bold font-mono text-stone-900 mt-1">4 Open</p>
-          <p className="text-xs text-stone-500 mt-1">15-day statutory conciliation</p>
+          <p className="text-xs font-semibold text-stone-500 uppercase">Open grievance cases</p>
+          <p className="text-2xl font-bold font-mono text-stone-900 mt-1">{openGrievances.toLocaleString()}</p>
+          <p className="text-xs text-stone-500 mt-1">Current authorized case list</p>
         </div>
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
-          <p className="text-xs font-semibold text-stone-500 uppercase">Judicial Escalations</p>
-          <p className="text-2xl font-bold font-mono text-earth-800 mt-1">1 Case</p>
-          <p className="text-xs text-stone-500 mt-1">Woreda Court docket</p>
+          <p className="text-xs font-semibold text-stone-500 uppercase">Court escalations</p>
+          <p className="text-2xl font-bold font-mono text-earth-800 mt-1">{courtEscalations.toLocaleString()}</p>
+          <p className="text-xs text-stone-500 mt-1">Cases at court arbitration stage</p>
         </div>
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
-          <p className="text-xs font-semibold text-stone-500 uppercase">Amicable Settlements</p>
-          <p className="text-2xl font-bold font-mono text-forest-800 mt-1">92.4%</p>
-          <p className="text-xs text-stone-500 mt-1">Resolved without court intervention</p>
+          <p className="text-xs font-semibold text-stone-500 uppercase">Cases resolved</p>
+          <p className="text-2xl font-bold font-mono text-forest-800 mt-1">{resolutionRate.toFixed(1)}%</p>
+          <p className="text-xs text-stone-500 mt-1">{resolvedGrievances} of {grievances.length} loaded cases resolved or dismissed</p>
         </div>
       </div>
 

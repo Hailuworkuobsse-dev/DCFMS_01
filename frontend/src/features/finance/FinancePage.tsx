@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '../../components/primitives/PageHeader';
+import { RefreshCw } from 'lucide-react';
 import { DataTable, Column } from '../../components/primitives/DataTable';
 import { StatusBadge } from '../../components/primitives/StatusBadge';
 import { Can } from '../../components/primitives/PermissionGate';
@@ -53,6 +54,7 @@ export const FinancePage: React.FC<FinancePageProps> = () => {
 
   const fetchData = async () => {
     setIsLoading(true);
+    setActionError('');
     try {
       const [financeRes, contractRes] = await Promise.all([
         api.finance.list(),
@@ -228,9 +230,9 @@ export const FinancePage: React.FC<FinancePageProps> = () => {
       render: (item) => (
         <div className="text-right font-mono">
           <p className="font-semibold text-stone-900">
-            {((item.deliveredKg ?? 4500) / 100).toFixed(1)} Qtl
+            {(item.deliveredKg == null ? '—' : (item.deliveredKg / 100).toFixed(1))} Qtl
           </p>
-          <p className="text-[11px] text-stone-500">{(item.deliveredKg ?? 4500).toLocaleString()} Kg</p>
+          <p className="text-[11px] text-stone-500">{item.deliveredKg == null ? '—' : `${item.deliveredKg.toLocaleString()} Kg`}</p>
         </div>
       ),
     },
@@ -315,6 +317,7 @@ export const FinancePage: React.FC<FinancePageProps> = () => {
         )}
         actions={
           <>
+            <button type="button" onClick={() => void fetchData()} disabled={isLoading} className="mr-2 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />{t('common.refresh', 'Refresh')}</button>
             <Can resource="loan" action="create">
               <button
                 type="button"
@@ -339,19 +342,19 @@ export const FinancePage: React.FC<FinancePageProps> = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
-          <p className="text-xs font-semibold text-stone-500 uppercase">Secured Escrow Vaults</p>
-          <p className="text-2xl font-bold font-mono text-forest-800 mt-1">{formatEtb(62400000)}</p>
-          <p className="text-xs text-stone-500 mt-1">Guaranteed at Commercial Bank</p>
+          <p className="text-xs font-semibold text-stone-500 uppercase">Gross settlement value</p>
+          <p className="text-2xl font-bold font-mono text-forest-800 mt-1">{formatEtb(settlements.reduce((sum, item) => sum + Number(item.grossAmountEtb || 0), 0))}</p>
+          <p className="text-xs text-stone-500 mt-1">Sum of loaded settlement records</p>
         </div>
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
-          <p className="text-xs font-semibold text-stone-500 uppercase">Input Credit Disbursed</p>
-          <p className="text-2xl font-bold font-mono text-stone-900 mt-1">{formatEtb(18500000)}</p>
-          <p className="text-xs text-stone-500 mt-1">Deducted at harvest intake</p>
+          <p className="text-xs font-semibold text-stone-500 uppercase">Loan principal disbursed</p>
+          <p className="text-2xl font-bold font-mono text-stone-900 mt-1">{formatEtb(loans.filter((item) => Boolean(item.disbursedAt) || ['Disbursed', 'DISBURSED'].includes(String(item.status))).reduce((sum, item) => sum + Number(item.principalEtb || 0), 0))}</p>
+          <p className="text-xs text-stone-500 mt-1">Loans marked as disbursed</p>
         </div>
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
-          <p className="text-xs font-semibold text-stone-500 uppercase">Total Settled to Farmers</p>
-          <p className="text-2xl font-bold font-mono text-stone-900 mt-1">{formatEtb(43900000)}</p>
-          <p className="text-xs text-stone-500 mt-1">100% on-time transfer</p>
+          <p className="text-xs font-semibold text-stone-500 uppercase">Net payout reconciled</p>
+          <p className="text-2xl font-bold font-mono text-stone-900 mt-1">{formatEtb(settlements.filter((item) => ['Reconciled', 'SETTLED'].includes(String(item.status))).reduce((sum, item) => sum + Number(item.netPayoutEtb || 0), 0))}</p>
+          <p className="text-xs text-stone-500 mt-1">Settlements marked reconciled or settled</p>
         </div>
       </div>
 
