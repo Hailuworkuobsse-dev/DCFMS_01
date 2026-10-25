@@ -363,3 +363,58 @@
   #root main { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   #root table { display: block; max-width: 100%; overflow-x: auto; }
 }
+
+
+/* Shared page, dashboard, and data-heavy workflow components */
+.page-heading {
+  border-bottom-color: #dce7de;
+  background: linear-gradient(100deg, rgba(255,255,255,.72), rgba(255,255,255,0));
+  border-radius: 0 0 1rem 1rem;
+}
+.page-heading-title {
+  color: #173b29;
+  letter-spacing: -.045em;
+  text-wrap: balance;
+}
+.page-heading nav a { color: #63766a; text-decoration: none; }
+.page-heading nav a:hover { color: #17643b; text-decoration: underline; text-underline-offset: 3px; }
+.role-dashboard > .space-y-6 { min-width: 0; }
+.role-dashboard .stat-card { min-height: 126px; }
+.stat-card-icon { display: inline-flex; align-items: center; justify-content: center; }
+.data-table-card { box-shadow: 0 10px 28px rgba(19,45,31,.045); }
+.data-table-card > div:first-child { background: #fff; }
+.data-table-card table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.data-table-card thead { background: #f1f6f2; }
+.data-table-card thead th {
+  font-size: .7rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: .055em;
+  color: #4e6656;
+}
+.data-table-card tbody tr:hover { background: #f6faf6; }
+.data-table-card tbody td { vertical-align: middle; }
+.shell-nav-item { min-height: 42px; }
+.shell-nav-item.is-active { box-shadow: inset 3px 0 0 #25804d; }
+#root main .role-dashboard .grid { align-items: stretch; }
+#root main .role-dashboard .grid > * { min-width: 0; }
+#root main .role-dashboard :is(.bg-white.border, .bg-white.rounded-lg, .bg-white.rounded-xl) {
+  border-radius: 1rem;
+  border-color: #e0e9e2;
+}
+#root main .role-dashboard :is(.shadow-sm, .shadow-xs) {
+  box-shadow: 0 8px 22px rgba(18, 51, 31, .045);
+}
+#root main .role-dashboard :is(.bg-white.border, .bg-white.rounded-lg, .bg-white.rounded-xl):hover {
+  border-color: #c9ddce;
+}
+#root main .role-dashboard :is(button, a)[class*="bg-forest-800"],
+#root main :is(button, a)[class*="bg-forest-800"] {
+  box-shadow: 0 5px 12px rgba(18,79,48,.12);
+}
+@media (max-width: 768px) {
+  .page-heading { padding-bottom: 1rem; }
+  .page-heading-title { font-size: clamp(1.4rem, 5vw, 1.85rem); }
+  .role-dashboard { gap: 1.25rem; }
+  .data-table-card { border-radius: 1rem; }
+}

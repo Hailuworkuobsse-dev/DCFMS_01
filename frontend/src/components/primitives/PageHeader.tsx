@@ -25,7 +25,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   const { t } = useTranslation();
 
   return (
-    <header className="mb-6 border-b border-stone-200 pb-5">
+    <header className="page-heading mb-6 border-b border-stone-200 pb-6">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav aria-label={t('common.breadcrumbs', 'Breadcrumbs')} className="mb-2">
           <ol className="flex flex-wrap items-center gap-1.5 text-xs text-stone-500">
@@ -50,10 +50,10 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
         </nav>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="page-heading-row flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">
+            <h1 className="page-heading-title text-2xl font-extrabold tracking-tight text-stone-900 sm:text-3xl">
               {title}
             </h1>
             {badge && <div>{badge}</div>}

@@ -35,23 +35,23 @@ export const StatCard: React.FC<StatCardProps> = ({
   return (
     <div
       className={cn(
-        'bg-white border border-stone-200 p-4 flex flex-col justify-between transition-all hover:border-stone-400 shadow-xs',
+        'stat-card group relative overflow-hidden rounded-2xl bg-white border border-stone-200 p-5 flex flex-col justify-between transition-all shadow-sm hover:-translate-y-0.5 hover:border-forest-200 hover:shadow-md',
         className
       )}
     >
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-xs font-semibold text-stone-600 truncate">
+        <span className="text-xs font-bold uppercase tracking-wider text-stone-500 truncate">
           {displayLabel}
         </span>
         {icon ? (
-          <div className="p-1.5 bg-stone-100 text-stone-800">
+          <div className="stat-card-icon rounded-xl p-2.5 bg-forest-50 text-forest-800 ring-1 ring-forest-100">
             {icon}
           </div>
         ) : null}
       </div>
 
       <div className="flex items-baseline justify-between gap-3 mt-1">
-        <div className="text-2xl font-bold font-mono text-stone-900 tabular-nums tracking-tight">
+        <div className="mt-1 text-3xl font-extrabold font-mono text-stone-900 tabular-nums tracking-tight">
           {value}
         </div>
         {displayDelta ? (
