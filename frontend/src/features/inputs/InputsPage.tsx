@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle, RefreshCw, RotateCcw } from 'lucide-react';
 import { PageHeader } from '../../components/primitives/PageHeader';
 import { DataTable, Column } from '../../components/primitives/DataTable';
 import { StatusBadge } from '../../components/primitives/StatusBadge';
@@ -17,17 +17,21 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
   const { t } = useTranslation();
   const [vouchers, setVouchers] = useState<InputVoucher[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [redeemingVoucher, setRedeemingVoucher] = useState<InputVoucher | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const [isRedeeming, setIsRedeeming] = useState(false);
 
   const fetchVouchers = async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const res = await api.inputs.listVouchers();
       setVouchers(res.vouchers);
     } catch (err) {
       console.error('Failed to load vouchers:', err);
+      setLoadError(err instanceof Error ? err.message : t('inputs.loadFailed', 'Unable to load voucher records.'));
     } finally {
       setIsLoading(false);
     }
@@ -40,6 +44,11 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
   const handleRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!redeemingVoucher) return;
+    if (!/^\\d{6}$/.test(otpCode.trim())) {
+      setActionError(t('inputs.invalidOtp', 'Enter the 6-digit verification code.'));
+      return;
+    }
+    setActionError('');
     setIsRedeeming(true);
     try {
       await api.inputs.redeemVoucher(redeemingVoucher.voucherCode, { otpCode });
@@ -48,6 +57,7 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
       await fetchVouchers();
     } catch (err) {
       console.error('Redeem failed:', err);
+      setActionError(err instanceof Error ? err.message : t('inputs.redeemFailed', 'Voucher redemption failed. Verify the code and try again.'));
     } finally {
       setIsRedeeming(false);
     }
@@ -116,7 +126,7 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
       header: t('inputs.validUntil', 'Valid Until'),
       render: (item) => (
         <span className="text-xs font-mono text-stone-500">
-          {item.expiryDate ? formatShortDate(item.expiryDate) : '2026-12-31'}
+          {item.expiryDate ? formatShortDate(item.expiryDate) : '—'}
         </span>
       ),
     },
@@ -130,23 +140,26 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
           'inputs.subtitle',
           'Certified seed, fertilizer (NPS/UREA), and crop protection distribution with agro-dealer redemption'
         )}
+        actions={<button type="button" onClick={() => void fetchVouchers()} disabled={isLoading} className="inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />{t('common.refresh', 'Refresh')}</button>}
       />
 
+      {loadError && <div role="alert" className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><div><p className="font-semibold">{t('inputs.loadFailedTitle', 'Voucher records could not be loaded')}</p><p className="mt-1">{loadError}</p></div></div><button type="button" onClick={() => void fetchVouchers()} className="inline-flex items-center gap-2 self-start rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-semibold"><RotateCcw className="h-3.5 w-3.5" />{t('common.retry', 'Retry')}</button></div>}
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-stone-200 p-4 shadow-xs">
-          <p className="text-xs font-semibold text-stone-500 uppercase">Total Issued Vouchers</p>
-          <p className="text-2xl font-bold font-mono text-stone-900 mt-1">1,450</p>
-          <p className="text-xs text-stone-500 mt-1">Value: {formatEtb(7250000)}</p>
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">Vouchers in current scope</p>
+          <p className="mt-1 font-mono text-2xl font-bold text-stone-900">{vouchers.length.toLocaleString()}</p>
+          <p className="mt-1 text-xs text-stone-500">Value: {formatEtb(vouchers.reduce((sum, item) => sum + Number(item.totalValueEtb ?? item.valueEtb ?? 0), 0))}</p>
         </div>
-        <div className="bg-white border border-stone-200 p-4 shadow-xs">
-          <p className="text-xs font-semibold text-stone-500 uppercase">Redeemed by Farmers</p>
-          <p className="text-2xl font-bold font-mono text-forest-800 mt-1">1,380 (95.1%)</p>
-          <p className="text-xs text-stone-500 mt-1">NPS, UREA & Certified Seed</p>
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">Redeemed vouchers</p>
+          <p className="mt-1 font-mono text-2xl font-bold text-forest-800">{vouchers.filter((item) => ['REDEEMED', 'Redeemed'].includes(String(item.status))).length.toLocaleString()}</p>
+          <p className="mt-1 text-xs text-stone-500">Based on loaded voucher status records</p>
         </div>
-        <div className="bg-white border border-stone-200 p-4 shadow-xs">
-          <p className="text-xs font-semibold text-stone-500 uppercase">Pending Dealer Settlement</p>
-          <p className="text-2xl font-bold font-mono text-harvest-700 mt-1">70 vouchers</p>
-          <p className="text-xs text-stone-500 mt-1">Under bank processing</p>
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">Awaiting redemption</p>
+          <p className="mt-1 font-mono text-2xl font-bold text-harvest-700">{vouchers.filter((item) => ['ISSUED', 'Issued'].includes(String(item.status))).length.toLocaleString()}</p>
+          <p className="mt-1 text-xs text-stone-500">Issued and not yet redeemed</p>
         </div>
       </div>
 
@@ -178,14 +191,15 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
       {/* Redemption Dialog */}
       {redeemingVoucher && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-white border border-stone-300 shadow-xl p-6">
-            <h3 className="text-base font-bold text-stone-900 mb-1">
+          <div role="dialog" aria-modal="true" aria-labelledby="voucher-redemption-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 id="voucher-redemption-title" className="text-base font-bold text-stone-900 mb-1">
               {t('inputs.confirmRedemption', 'Confirm Voucher Redemption')}
             </h3>
             <p className="text-xs text-stone-600 mb-4">
               Voucher #{redeemingVoucher.voucherCode} for {redeemingVoucher.farmerName || redeemingVoucher.beneficiaryName}.
             </p>
 
+            {actionError && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">{actionError}</div>}
             <form onSubmit={handleRedeem} className="space-y-4">
               <div className="p-3 bg-stone-50 border border-stone-200 text-xs space-y-1">
                 {redeemingVoucher.items && redeemingVoucher.items.length > 0 ? (
@@ -211,19 +225,22 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
                   type="text"
                   maxLength={6}
                   value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value)}
+                  onChange={(e) => { setOtpCode(e.target.value.replace(/\\D/g, '').slice(0, 6)); setActionError(''); }}
+                  required
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
                   placeholder="123456"
                   className="w-full text-center font-mono py-2 text-base border border-stone-300 focus:outline-none focus:border-stone-900"
                 />
                 <p className="text-[11px] text-stone-500 mt-1">
-                  Simulated validation: Any 6 digits accepted.
+                  Enter the code sent to the farmer. The server verifies whether it is valid.
                 </p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-stone-200">
                 <button
                   type="button"
-                  onClick={() => setRedeemingVoucher(null)}
+                  onClick={() => { setRedeemingVoucher(null); setOtpCode(''); setActionError(''); }}
                   className="px-4 py-2 text-xs font-semibold text-stone-700 bg-white border border-stone-300"
                 >
                   {t('common.cancel', 'Cancel')}
