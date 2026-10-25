@@ -170,3 +170,196 @@
   #root { overflow-x: clip; }
   #root header { backdrop-filter: blur(16px); }
 }
+
+
+/* Refined DCFMS design system — institutional, agricultural, and digital */
+@theme {
+  --font-display: "Plus Jakarta Sans", "Noto Sans Ethiopic", system-ui, sans-serif;
+  --font-sans: "Public Sans", "Noto Sans Ethiopic", system-ui, sans-serif;
+  --color-forest-50: #eff8f1;
+  --color-forest-100: #d9efdf;
+  --color-forest-200: #b8dfc4;
+  --color-forest-300: #8bc7a0;
+  --color-forest-600: #25804d;
+  --color-forest-700: #17643b;
+  --color-forest-800: #124f30;
+  --color-forest-900: #103f28;
+  --color-forest-950: #082719;
+  --color-harvest-300: #f3d67b;
+  --color-harvest-400: #e9c45c;
+  --color-harvest-500: #d8a938;
+}
+
+.landing-page {
+  --landing-ink: #132d22;
+  --landing-muted: #5e7066;
+  --landing-line: #e1e9e2;
+  --landing-green: #17643b;
+  --landing-gold: #d8a938;
+  color: var(--landing-ink);
+  background:
+    radial-gradient(ellipse at 12% 10%, rgba(210, 231, 214, .55), transparent 36rem),
+    #f7f9f6;
+  font-family: var(--font-sans);
+}
+.landing-page .landing-header {
+  background: rgba(255,255,255,.92);
+  border-color: rgba(21, 70, 43, .12);
+  box-shadow: 0 8px 30px rgba(19, 45, 31, .055);
+}
+.landing-page .landing-header nav { min-height: 78px; }
+.landing-page .brand-emblem {
+  background: linear-gradient(145deg, #287d4c 0%, #0e452b 75%);
+  border: 1px solid rgba(255,255,255,.5);
+  box-shadow: 0 8px 18px rgba(23,100,59,.22), inset 0 1px 0 rgba(255,255,255,.22);
+}
+.landing-page .brand-wordmark { letter-spacing: -.045em; color: #163a29; }
+.landing-page .brand-subtitle { letter-spacing: .1em; line-height: 1.55; }
+.landing-page .landing-hero {
+  position: relative;
+  isolation: isolate;
+}
+.landing-page .landing-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 28rem;
+  height: 28rem;
+  top: 1rem;
+  right: -7rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(213, 232, 215, .6), rgba(247,249,246,0) 70%);
+  pointer-events: none;
+}
+.landing-page .landing-hero-title {
+  max-width: 13ch;
+  font-family: var(--font-display);
+  line-height: 1.04;
+  letter-spacing: -.055em;
+  text-wrap: balance;
+}
+.landing-page .landing-hero .inline-flex.rounded-full {
+  border-color: #cce4d1;
+  background: #edf7ef;
+  color: #195d37;
+  letter-spacing: .09em;
+}
+.landing-page .hero-dashboard {
+  border-color: rgba(28, 92, 53, .14);
+  background: linear-gradient(145deg, rgba(231,245,233,.96), rgba(255,255,255,.98) 52%, rgba(252,246,228,.9));
+  box-shadow: 0 28px 80px rgba(20, 58, 36, .12);
+  transform: translateY(0);
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+.landing-page .hero-dashboard:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 34px 90px rgba(20, 58, 36, .16);
+}
+.landing-page article,
+.landing-page section[id="value-proposition"] article,
+.landing-page section#features article,
+.landing-page section#stakeholders article,
+.landing-page section#how-it-works > div > div > div,
+.landing-page section[aria-labelledby="impact-heading"] div.grid > div {
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.landing-page section[id="value-proposition"] article:hover,
+.landing-page section#features article:hover,
+.landing-page section#stakeholders article:hover,
+.landing-page section#how-it-works > div > div > div:hover,
+.landing-page section[aria-labelledby="impact-heading"] div.grid > div:hover {
+  transform: translateY(-3px);
+  border-color: #c8ddcd;
+  box-shadow: 0 16px 34px rgba(24, 61, 39, .08);
+}
+.landing-page h1, .landing-page h2, .landing-page h3 {
+  font-family: var(--font-display);
+  letter-spacing: -.035em;
+}
+.landing-page section { scroll-margin-top: 6rem; }
+.landing-page button, .landing-page a { -webkit-tap-highlight-color: transparent; }
+.landing-page button { transition: background-color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+.landing-page button:active { transform: translateY(1px); }
+.landing-page footer { background: #fff; }
+.landing-page footer .brand-emblem { border-radius: .85rem; }
+.landing-page a:focus-visible, .landing-page button:focus-visible {
+  outline: 3px solid rgba(216,169,56,.85);
+  outline-offset: 3px;
+}
+@media (max-width: 640px) {
+  .landing-page .landing-header nav { min-height: 68px; }
+  .landing-page .brand-subtitle { max-width: 13rem; font-size: 8px; letter-spacing: .07em; }
+  .landing-page .landing-hero-title { max-width: 100%; line-height: 1.08; }
+  .landing-page .hero-dashboard { padding: .9rem; border-radius: 1.25rem; }
+}
+
+
+/* Consistent visual language across authenticated pages and modules */
+#root > div:not(.landing-page) {
+  background: linear-gradient(145deg, #f4f7f4 0%, #f7f8f6 55%, #eef4ef 100%);
+}
+#root header {
+  background-color: rgba(255,255,255,.94);
+  border-bottom-color: #dfe8e1;
+  box-shadow: 0 5px 22px rgba(18, 51, 31, .055);
+}
+#root aside {
+  background: rgba(255,255,255,.96);
+  border-right-color: #dfe8e1;
+}
+#root aside nav button[aria-current="page"],
+#root aside nav button[data-active="true"] {
+  background: linear-gradient(100deg, #eaf5ec, #f4f9f4);
+  color: #14532d;
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 #25804d;
+}
+#root main h1 {
+  font-family: var(--font-display);
+  color: #163a29;
+  letter-spacing: -.04em;
+  line-height: 1.15;
+}
+#root main h2, #root main h3 {
+  font-family: var(--font-display);
+  letter-spacing: -.025em;
+}
+#root main :is(section, article, [class*="rounded-xl"][class*="border"], [class*="rounded-2xl"][class*="border"]) {
+  border-color: #e0e8e1;
+}
+#root main :is(article, [class*="rounded-xl"][class*="border"], [class*="rounded-2xl"][class*="border"]) {
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+#root main :is(input, select, textarea) {
+  min-height: 2.65rem;
+  border-color: #d5e0d7;
+  background-color: #fff;
+}
+#root main :is(input, select, textarea):focus {
+  border-color: #25804d;
+  box-shadow: 0 0 0 3px rgba(37,128,77,.13);
+}
+#root main button:not(:disabled) {
+  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+#root main button:not(:disabled):active { transform: translateY(1px); }
+#root table {
+  overflow: hidden;
+  border-radius: .8rem;
+}
+#root table thead th {
+  padding-top: .9rem;
+  padding-bottom: .9rem;
+  background: #f0f5f1;
+  color: #4c6254;
+}
+#root table tbody td { border-color: #e8eee9; }
+#root .brand-emblem {
+  background: linear-gradient(145deg, #287d4c 0%, #0e452b 75%);
+  border: 1px solid rgba(255,255,255,.5);
+  box-shadow: 0 7px 16px rgba(23,100,59,.2), inset 0 1px 0 rgba(255,255,255,.2);
+}
+@media (max-width: 640px) {
+  #root main { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  #root table { display: block; max-width: 100%; overflow-x: auto; }
+}

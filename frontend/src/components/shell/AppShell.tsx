@@ -131,9 +131,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                 aria-label={t('nav.dashboard', 'Dashboard')}
                 className="flex items-center gap-2.5 cursor-pointer text-left rounded-full border border-stone-200 bg-stone-50/80 px-2 py-1.5 shadow-sm transition hover:border-forest-200 hover:bg-stone-50"
               >
-                <div className="flex h-9 w-9 items-center justify-center border border-forest-900 bg-gradient-to-br from-forest-800 to-forest-700 font-bold text-sm text-harvest-400 shadow-sm">
-                  ATI
-                </div>
+                <div className="brand-emblem flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-md" aria-hidden="true"><Wheat className="h-6 w-6" strokeWidth={2.2} /></div>
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span className="font-extrabold text-sm tracking-tight text-stone-900">
