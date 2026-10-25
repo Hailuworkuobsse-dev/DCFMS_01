@@ -197,14 +197,16 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
         searchPlaceholder={t('linkage.searchPlaceholder', 'Search demands, commodities, buyers...')}
         exportFileName="dcfms-linkages"
         actions={(item) => (
-          <button
-            type="button"
-            onClick={() => onNavigate(`/contracts/new?linkageId=${encodeURIComponent(String(item.id ?? ''))}`)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-forest-800 bg-forest-50 border border-forest-300 hover:bg-forest-100"
-          >
-            <span>Convert to Contract</span>
-            <ArrowRight className="w-3 h-3" />
-          </button>
+          <Can resource="contract" action="create">
+            <button
+              type="button"
+              onClick={() => onNavigate(`/contracts/new?linkageId=${encodeURIComponent(String(item.id ?? ''))}`)}
+              className="inline-flex items-center gap-1 rounded-lg border border-forest-200 bg-forest-50 px-2.5 py-1.5 text-xs font-semibold text-forest-800 hover:bg-forest-100"
+            >
+              <span>Convert to Contract</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </Can>
         )}
       />
 
