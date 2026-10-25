@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useEffect, useState } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { api } from './lib/api/client';
 import { AppShell } from './components/shell/AppShell';
@@ -20,7 +19,6 @@ import { LoadingState } from './components/primitives/States';
 import { ProtectedRoute } from './components/primitives/PermissionGate';
 
 export default function App() {
-  const { t } = useTranslation();
   const { isAuthenticated, setSession, setAuthChecked } = useAppStore();
   const [currentPath, setCurrentPath] = useState<string>(
     window.location.pathname === '/' ? '/dashboard' : window.location.pathname

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Shield, KeyRound, User, AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
-import { ROLE_REGISTRY, RoleId } from '../../lib/rbac/roles';
+import { RoleId } from '../../lib/rbac/roles';
 import { api } from '../../lib/api/client';
 import { ShellControls } from '../../components/primitives/ShellControls';
 
@@ -22,13 +22,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
   // Quick Role selection presets
   const rolePresets: Array<{ role: RoleId; label: string; email: string }> = [
     { role: 'ATISuperAdmin', label: 'ATI Super Admin', email: 'superadmin@ati.gov.et' },
-    { role: 'MoAFederal', label: 'MoA Federal Inspector', email: 'moa.federal@moa.gov.et' },
-    { role: 'WBoAWoreda', label: 'WBoA Woreda Officer (Arsi)', email: 'wboa.arsi@oromia.gov.et' },
-    { role: 'ContractorAgroProcessor', label: 'Wheat Agro-Processor', email: 'procurement@ethioflour.com' },
-    { role: 'PrimaryCooperative', label: 'Hetosa Primary Coop', email: 'hetosa.coop@oromia.org' },
-    { role: 'CommercialBank', label: 'Commercial Bank of Ethiopia', email: 'cbe.agri@cbe.com.et' },
-    { role: 'CourtJudge', label: 'Woreda Court Judge', email: 'judge.arsi@oromia-court.gov.et' },
-    { role: 'FarmerIndividual', label: 'Smallholder Farmer', email: 'farmer.tadesse@dcfms.et' },
+    { role: 'MoAFederal', label: 'MoA Federal Inspector', email: 'oversight@moa.gov.et' },
+    { role: 'WBoAWoreda', label: 'WBoA Woreda Officer', email: 'adaa@wboa.gov.et' },
+    { role: 'Contractor', label: 'Wheat Agro-Processor', email: 'offtake@habeshabreweries.com' },
+    { role: 'ProducerCooperative', label: 'Erba Farmers Cooperative', email: 'manager@erbafarmers.org' },
+    { role: 'FinancialInstitution', label: 'Cooperative Bank', email: 'agri-credit@coopbank.et' },
+    { role: 'JusticeOfficer', label: 'Woreda Court Judge', email: 'arbitration@justice.gov.et' },
+    { role: 'ProducerIndividual', label: 'Smallholder Farmer', email: 'alemu.farmer@ethio.et' },
   ];
 
   const handleSelectPreset = (preset: typeof rolePresets[0]) => {
