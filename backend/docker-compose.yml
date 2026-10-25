@@ -1,15 +1,16 @@
 version: "3.9"
 services:
   db:
-    image: postgres:15-alpine
+    image: mysql:8.0
     environment:
-      POSTGRES_USER: dcfms
-      POSTGRES_PASSWORD: dcfms_dev_password
-      POSTGRES_DB: dcfms
-    ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: dcfms
+      MYSQL_USER: root
+      MYSQL_PASSWORD: admin
+    ports: ["3307:3307"]
+    volumes: ["mysqldata:/var/lib/mysql"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dcfms"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-padmin"]
       interval: 5s
       retries: 5
   api:
@@ -17,7 +18,7 @@ services:
     env_file: .env
     depends_on:
       db: { condition: service_healthy }
-    ports: ["3000:3000"]
+    ports: ["3151:3151"]
     command: sh -c "npx prisma migrate deploy && node dist/main"
 volumes:
-  pgdata:
+  mysqldata:
