@@ -6,7 +6,6 @@ import { DataTable, Column } from '../../components/primitives/DataTable';
 import { StatusBadge } from '../../components/primitives/StatusBadge';
 import { Can } from '../../components/primitives/PermissionGate';
 import { api } from '../../lib/api/client';
-import { formatEtb } from '../../lib/utils/format';
 
 export interface LinkagePageProps {
   onNavigate: (path: string) => void;
@@ -35,7 +34,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
     fetchLinkages();
   }, []);
 
-  const totalDemandKg = linkages.reduce((sum, item) => sum + Number(item.demandVolumeKg || 0), 0);
+  const totalDemandQt = linkages.reduce((sum, item) => sum + Number(item.estimatedVolumeQt || 0), 0);
   const matchedDemandCount = linkages.filter((item) => String(item.status || '').toUpperCase() === 'MATCHED').length;
   const columns: Column<any>[] = [
     {
@@ -64,8 +63,8 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
       header: t('linkage.buyer', 'Off-Taker / Buyer'),
       render: (item) => (
         <div>
-          <p className="font-semibold text-stone-900">{item.buyerName || item.buyerOrgName || '—'}</p>
-          <p className="text-[11px] text-stone-500">{item.buyerRegion || item.region || '—'}</p>
+          <p className="font-semibold text-stone-900">{item.buyerOrgName || 'Buyer not assigned'}</p>
+          <p className="text-[11px] text-stone-500">{`${item.farmersCount ?? 0} farmers · ${item.totalHectares ?? 0} ha`}</p>
         </div>
       ),
     },
@@ -76,10 +75,10 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
       render: (item) => (
         <div className="text-right">
           <p className="font-mono font-semibold text-stone-900">
-            {item.demandVolumeKg == null ? '—' : `${(Number(item.demandVolumeKg) / 100).toLocaleString()} Qtl`}
+            {item.estimatedVolumeQt == null ? '—' : `${Number(item.estimatedVolumeQt).toLocaleString()} Qtl`}
           </p>
           <p className="text-[11px] text-stone-500 font-mono">
-            {item.demandVolumeKg == null ? '—' : `${Number(item.demandVolumeKg).toLocaleString()} Kg`}
+            {item.estimatedVolumeQt == null ? '—' : `${(Number(item.estimatedVolumeQt) * 100).toLocaleString()} Kg`}
           </p>
         </div>
       ),
@@ -90,7 +89,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
       align: 'right',
       render: (item) => (
         <div className="text-right font-mono font-semibold text-forest-800">
-          {item.indicativePriceEtb == null ? '—' : <>{formatEtb(item.indicativePriceEtb)} <span className="text-[10px] text-stone-500">/Kg</span></>}
+          {'Not specified'}
         </div>
       ),
     },
@@ -99,7 +98,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
       header: t('linkage.matchedProducers', 'Matched Cooperatives'),
       render: (item) => (
         <span className="text-xs text-stone-700">
-          {item.matchedProducersCount == null ? 'Not assessed' : `${item.matchedProducersCount} Primary Co-ops`}
+          {item.farmersCount == null ? 'Not assessed' : `${item.farmersCount} farmers`}
         </span>
       ),
     },
@@ -145,14 +144,14 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
             Registered Buyer Demands
           </p>
           <p className="text-2xl font-bold font-mono text-stone-900 mt-1">{linkages.length.toLocaleString()} Demands</p>
-          <p className="text-xs text-stone-500 mt-1">Loaded from the current authorized demand registry</p>
+          <p className="text-xs text-stone-500 mt-1">Total estimated production across linked farmers</p>
         </div>
 
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
           <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
             Total Demand Volume
           </p>
-          <p className="text-2xl font-bold font-mono text-forest-800 mt-1">{totalDemandKg ? `${(totalDemandKg / 1000).toLocaleString()} MT` : '—'}</p>
+          <p className="text-2xl font-bold font-mono text-forest-800 mt-1">{totalDemandQt ? `${(totalDemandQt / 10).toLocaleString()} MT` : '—'}</p>
           <p className="text-xs text-stone-500 mt-1">Calculated from available demand records</p>
         </div>
 
