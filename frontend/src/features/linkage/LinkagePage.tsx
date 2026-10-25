@@ -126,7 +126,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
           <Can resource="linkage" action="create">
             <button
               type="button"
-              onClick={() => onNavigate(`/contracts/new?linkageId=${encodeURIComponent(String(item.id ?? ''))}`)}
+              onClick={() => onNavigate('/contracts/new')}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-forest-800 hover:bg-forest-900 shadow-xs"
             >
               <Plus className="w-4 h-4" />
@@ -175,7 +175,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
         actions={(item) => (
           <button
             type="button"
-            onClick={() => onNavigate('/contracts/new')}
+            onClick={() => onNavigate(`/contracts/new?linkageId=${encodeURIComponent(String(item.id ?? ''))}`)}
             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-forest-800 bg-forest-50 border border-forest-300 hover:bg-forest-100"
           >
             <span>Convert to Contract</span>
