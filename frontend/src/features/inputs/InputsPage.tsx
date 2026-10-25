@@ -44,7 +44,7 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
   const handleRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!redeemingVoucher) return;
-    if (!/^\\d{6}$/.test(otpCode.trim())) {
+    if (!/^\d{6}$/.test(otpCode.trim())) {
       setActionError(t('inputs.invalidOtp', 'Enter the 6-digit verification code.'));
       return;
     }
@@ -225,7 +225,7 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
                   type="text"
                   maxLength={6}
                   value={otpCode}
-                  onChange={(e) => { setOtpCode(e.target.value.replace(/\\D/g, '').slice(0, 6)); setActionError(''); }}
+                  onChange={(e) => { setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setActionError(''); }}
                   required
                   inputMode="numeric"
                   pattern="[0-9]{6}"
