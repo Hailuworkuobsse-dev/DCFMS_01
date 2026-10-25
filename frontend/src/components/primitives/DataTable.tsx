@@ -144,7 +144,10 @@ export function DataTable<T extends Record<string, any>>({
         if (typeof val === 'object' && val !== null) {
           val = JSON.stringify(val);
         }
-        return `"${String(val ?? '').replace(/"/g, '""')}"`;
+        let cell = String(val ?? '');
+        // Prevent spreadsheet formula execution for untrusted text in exported CSV files.
+        if (typeof val === 'string' && /^[=+@\t\r]/.test(cell)) cell = `'${cell}`;
+        return `"${cell.replace(/"/g, '""')}"`;
       });
       return row.join(',');
     });
@@ -250,10 +253,13 @@ export function DataTable<T extends Record<string, any>>({
                         ? 'text-center'
                         : 'text-left'
                     } ${col.sortable ? 'cursor-pointer hover:bg-stone-100' : ''}`}
-                    onClick={() => col.sortable && handleSort(col.key)}
                   >
-                    <div
-                      className={`inline-flex items-center gap-1.5 ${
+                    <button
+                      type="button"
+                      disabled={!col.sortable}
+                      onClick={() => col.sortable && handleSort(col.key)}
+                      aria-label={col.sortable ? `${col.header}, ${sortKey === col.key ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'not sorted'}` : col.header}
+                      className={`inline-flex items-center gap-1.5 rounded-md text-left focus:outline-none focus:ring-2 focus:ring-forest-600 disabled:cursor-default ${
                         col.align === 'right'
                           ? 'justify-end w-full'
                           : col.align === 'center'
@@ -275,7 +281,7 @@ export function DataTable<T extends Record<string, any>>({
                           )}
                         </span>
                       )}
-                    </div>
+                    </button>
                   </th>
                 ))}
                 {actions && (
