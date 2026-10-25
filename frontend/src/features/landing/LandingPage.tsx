@@ -87,9 +87,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginNavigate }) => 
 
         <nav ref={navRef} aria-label="Main navigation" className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           <button type="button" onClick={() => handleNavigation('top')} className="flex items-center gap-3 text-left" aria-label={t('landing.brand', 'DCFMS home')}>
-            <div className="flex h-10 w-10 items-center justify-center border border-forest-900 bg-forest-800 font-bold text-sm text-harvest-400">
-              ATI
-            </div>
+            <div className="brand-emblem flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg" aria-hidden="true"><Sprout className="h-7 w-7" strokeWidth={2.2} /></div>
             <div>
               <div className="brand-wordmark text-lg font-extrabold tracking-tight text-stone-900">DCFMS</div>
               <div className="brand-subtitle text-[10px] font-semibold uppercase tracking-[0.15em] text-stone-500">
@@ -438,7 +436,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginNavigate }) => 
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] lg:px-8">
           <div>
             <div className="mb-3 flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center border border-forest-900 bg-forest-800 text-sm font-bold text-harvest-400">ATI</div>
+              <div className="brand-emblem flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-md" aria-hidden="true"><Sprout className="h-6 w-6" strokeWidth={2.2} /></div>
               <div>
                 <div className="text-base font-black text-stone-900">DCFMS</div>
               </div>
