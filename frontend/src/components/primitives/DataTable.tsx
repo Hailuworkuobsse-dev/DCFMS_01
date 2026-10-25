@@ -6,6 +6,8 @@ import {
   ChevronsUpDown,
   Search,
   Download,
+  X,
+  Printer,
 } from 'lucide-react';
 import { LoadingState, EmptyState } from './States';
 import { downloadTextFile } from '../../lib/utils/format';
@@ -64,6 +66,7 @@ export function DataTable<T extends Record<string, any>>({
     initialSortDirection
   );
   const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(pageSize);
 
   const getKey = (item: T, idx: number): string => {
     if (typeof keyField === 'function') return keyField(item);
@@ -117,11 +120,18 @@ export function DataTable<T extends Record<string, any>>({
   }, [data, searchTerm, sortKey, sortDirection, columns]);
 
   // Pagination
-  const totalPages = Math.ceil(processedData.length / pageSize) || 1;
+  const totalPages = Math.ceil(processedData.length / rowsPerPage) || 1;
+  // Clamp the effective page immediately when filters or refreshed data shrink the result set.
+  const safeCurrentPage = Math.min(currentPage, totalPages);
   const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return processedData.slice(start, start + pageSize);
-  }, [processedData, currentPage, pageSize]);
+    const start = (safeCurrentPage - 1) * rowsPerPage;
+    return processedData.slice(start, start + rowsPerPage);
+  }, [processedData, safeCurrentPage, rowsPerPage]);
+
+  const handlePrint = () => {
+    // Uses the browser's native print dialog, where users can choose Save as PDF.
+    window.print();
+  };
 
   const handleExportCSV = () => {
     if (!processedData.length) return;
@@ -162,15 +172,38 @@ export function DataTable<T extends Record<string, any>>({
                   setSearchTerm(e.target.value);
                   setCurrentPage(1);
                 }}
+                aria-label={searchPlaceholder || t('common.search', 'Search records...')}
                 placeholder={searchPlaceholder || t('common.search', 'Search records...')}
-                className="w-full pl-9 pr-3 py-1.5 text-sm bg-white border border-stone-200 rounded-none focus:outline-none focus:border-stone-900 focus:ring-1 focus:ring-stone-900 text-stone-900 placeholder:text-stone-400"
+                className="w-full pl-9 pr-9 py-2 text-sm bg-white border border-stone-200 rounded-xl focus:outline-none focus:border-forest-700 focus:ring-2 focus:ring-forest-100 text-stone-900 placeholder:text-stone-400"
               />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchTerm(''); setCurrentPage(1); }}
+                  aria-label={t('common.clearSearch', 'Clear search')}
+                  title={t('common.clearSearch', 'Clear search')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-stone-500 hover:bg-stone-100 focus:outline-none focus:ring-2 focus:ring-forest-600"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           )}
           {filterComponent}
         </div>
 
         <div className="flex items-center gap-2">
+          <label className="inline-flex items-center gap-2 text-xs text-stone-600">
+            <span>{t('common.rowsPerPage', 'Rows')}</span>
+            <select
+              value={rowsPerPage}
+              onChange={(e) => { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+              aria-label={t('common.rowsPerPage', 'Rows per page')}
+              className="rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-xs text-stone-700 focus:outline-none focus:ring-2 focus:ring-forest-600"
+            >
+              {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
           {exportFileName && processedData.length > 0 && (
             <button
               onClick={handleExportCSV}
@@ -182,14 +215,25 @@ export function DataTable<T extends Record<string, any>>({
               <span>{t('common.export', 'Export CSV')}</span>
             </button>
           )}
-          <span className="text-xs text-stone-500 font-mono">
+          {processedData.length > 0 && (
+            <button
+              type="button"
+              onClick={handlePrint}
+              title={t('common.printOrSavePdf', 'Print or save as PDF')}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-forest-600"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              <span>{t('common.print', 'Print / PDF')}</span>
+            </button>
+          )}
+          <span className="text-xs text-stone-500 tabular-nums" aria-live="polite">
             {processedData.length} {t('common.records', 'records')}
           </span>
         </div>
       </div>
 
       {/* Table Surface */}
-      <div className="border border-stone-200 bg-white overflow-hidden shadow-xs">
+      <div className="data-table-surface overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-stone-700 border-collapse">
             <thead className="bg-stone-50 border-b border-stone-200 text-xs font-semibold uppercase tracking-wider text-stone-700">
@@ -198,6 +242,7 @@ export function DataTable<T extends Record<string, any>>({
                   <th
                     key={col.key}
                     scope="col"
+                    aria-sort={sortKey === col.key ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
                     className={`px-4 py-3 select-none ${col.className || ''} ${
                       col.align === 'right'
                         ? 'text-right'
@@ -312,19 +357,19 @@ export function DataTable<T extends Record<string, any>>({
         </div>
 
         {/* Pagination Footer */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-stone-200 bg-stone-50 px-4 py-3 text-xs text-stone-600 sm:px-6">
+        {processedData.length > 0 && (
+          <div className="flex flex-col gap-3 border-t border-stone-200 bg-stone-50 px-4 py-3 text-xs text-stone-600 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div>
               {t('common.showing', 'Showing')}{' '}
               <span className="font-semibold text-stone-900 font-mono">
                 {Math.min(
-                  (currentPage - 1) * pageSize + 1,
+                  (safeCurrentPage - 1) * rowsPerPage + 1,
                   processedData.length
                 )}
               </span>{' '}
               {t('common.to', 'to')}{' '}
               <span className="font-semibold text-stone-900 font-mono">
-                {Math.min(currentPage * pageSize, processedData.length)}
+                {Math.min(safeCurrentPage * rowsPerPage, processedData.length)}
               </span>{' '}
               {t('common.of', 'of')}{' '}
               <span className="font-semibold text-stone-900 font-mono">
@@ -336,19 +381,19 @@ export function DataTable<T extends Record<string, any>>({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, Math.min(p, totalPages) - 1))}
+                disabled={safeCurrentPage === 1}
                 className="px-2.5 py-1 text-xs border border-stone-300 bg-white font-medium text-stone-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-stone-100 focus:outline-none focus:ring-1 focus:ring-stone-900"
               >
                 {t('common.previous', 'Previous')}
               </button>
               <span className="px-2 font-mono">
-                {currentPage} / {totalPages}
+                {safeCurrentPage} / {totalPages}
               </span>
               <button
                 type="button"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, Math.min(p, totalPages) + 1))}
+                disabled={safeCurrentPage === totalPages}
                 className="px-2.5 py-1 text-xs border border-stone-300 bg-white font-medium text-stone-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-stone-100 focus:outline-none focus:ring-1 focus:ring-stone-900"
               >
                 {t('common.next', 'Next')}
