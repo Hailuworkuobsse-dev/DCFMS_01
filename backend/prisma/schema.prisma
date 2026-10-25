@@ -1,0 +1,472 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Role {
+  FARMER
+  COOPERATIVE
+  CONTRACTOR
+  FI_OFFICER
+  AGRO_DEALER
+  FIELD_AGENT
+  WBOA_OFFICER
+  RBOA_OFFICER
+  MOA_OFFICER
+  MOTRI_OFFICER
+  ECC_OFFICER
+  EAA_OFFICER
+  RESOLUTION_OFFICER
+  AUDITOR
+  SYSTEM_ADMIN
+  SUPPORT_AGENT
+}
+
+enum AdminLevel {
+  FEDERAL
+  REGIONAL
+  ZONAL
+  WOREDA
+  KEBELE
+}
+
+enum ContractStatus {
+  DRAFT
+  PENDING_SIGNATURES
+  SIGNED
+  PENDING_APPROVAL
+  APPROVED
+  IN_EXECUTION
+  COMPLETED
+  ADJUSTED
+  REJECTED
+  CANCELLED
+}
+
+enum SignatureStatus {
+  PENDING
+  SIGNED
+  DECLINED
+}
+
+enum SignatureMethod {
+  OTP
+  FAYDAPASS
+  MANUAL
+}
+
+enum LoanStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  DISBURSED
+  REPAYING
+  CLOSED
+  DEFAULTED
+}
+
+enum VoucherStatus {
+  ISSUED
+  REDEEMED
+  EXPIRED
+  CANCELLED
+}
+
+enum GrievanceStatus {
+  OPEN
+  IN_REVIEW
+  ESCALATED
+  RESOLVED
+  CLOSED
+}
+
+enum GrievanceCategory {
+  CONTRACT_TERMS
+  PAYMENT
+  INPUT_QUALITY
+  DELIVERY
+  OTHER
+}
+
+enum MonitoringType {
+  FIELD_VISIT
+  INPUT_DISTRIBUTION
+  PRODUCTION_PROGRESS
+  COMPLIANCE
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  SIGN
+  PAYOUT
+  ESCALATE
+  EXPORT
+  VIEW_SENSITIVE
+}
+
+// ============================================================
+// USERS & IDENTITY
+// ============================================================
+
+model User {
+  id           String     @id @default(uuid())
+  email        String?    @unique
+  phone        String     @unique
+  passwordHash String
+  fullName     String
+  role         Role
+  adminLevel   AdminLevel?
+  region       String?
+  zone         String?
+  woreda       String?
+  kebele       String?
+  isActive     Boolean    @default(true)
+  mfaEnabled   Boolean    @default(false)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  farmer       Farmer?
+  cooperative  Cooperative?
+  contractor   Contractor?
+  createdAtAudits   AuditLog[]  @relation("actor")
+  createdContracts  Contract[]  @relation("contract_creator")
+  approvedContracts Contract[]  @relation("contract_approver")
+  otpCodes     OtpCode[]
+  refreshTokens RefreshToken[]
+
+  @@index([role])
+  @@index([region, woreda])
+}
+
+model OtpCode {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  purpose   String   @default("SIGN")
+  expiresAt DateTime
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, purpose])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ============================================================
+// ACTORS
+// ============================================================
+
+model Farmer {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  faydaFin       String?   @unique
+  faydaFan       String?
+  cooperativeId  String?
+  cooperative    Cooperative? @relation(fields: [cooperativeId], references: [id])
+  parcels        Parcel[]
+  contracts      ContractParty[]
+  loans          Loan[]
+  vouchers       Voucher[]
+  grievances     Grievance[] @relation("grievance_raiser")
+  createdAt      DateTime  @default(now())
+}
+
+model Parcel {
+  id           String   @id @default(uuid())
+  farmerId     String
+  farmer       Farmer   @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  name         String
+  sizeHa       Float
+  gpsPolygon   String?
+  crop         String?
+  season       String?
+  isLocked     Boolean  @default(false)
+  contractId   String?
+  contract     Contract? @relation(fields: [contractId], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([farmerId])
+  @@index([contractId])
+}
+
+model Cooperative {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registrationNo String
+  region       String
+  woreda       String
+  members      Farmer[]
+  createdAt    DateTime @default(now())
+}
+
+model Contractor {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licenseNo      String
+  tin            String
+  businessPlan   String?
+  guaranteeProof String?
+  approvalStatus String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  supportLetter  String?
+  createdAt      DateTime @default(now())
+}
+
+// ============================================================
+// CONTRACTS
+// ============================================================
+
+model Contract {
+  id             String         @id @default(uuid())
+  contractNo     String         @unique
+  templateId     String?
+  commodity      String
+  quantity       Float
+  unit           String         @default("quintal")
+  quality        String?
+  priceMechanism String         @default("MARKET") // FIXED | MARKET
+  fixedPrice     Float?
+  deliveryStart  DateTime?
+  deliveryEnd    DateTime?
+  status         ContractStatus @default(DRAFT)
+  content        Json           // structured clause tree
+  contentHash    String?        // SHA-256 tamper-evidence
+  region         String?
+  woreda         String?
+  createdById    String
+  createdBy      User           @relation("contract_creator", fields: [createdById], references: [id])
+  approvedById   String?
+  approvedBy     User?          @relation("contract_approver", fields: [approvedById], references: [id])
+  approvedAt     DateTime?
+  rejectionNote  String?
+  parties        ContractParty[]
+  signatures     Signature[]
+  parcels        Parcel[]
+  vouchers       Voucher[]
+  loans          Loan[]
+  payments       Payment[]
+  versions       ContractVersion[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status])
+  @@index([region, woreda])
+  @@index([commodity])
+}
+
+model ContractParty {
+  id         String   @id @default(uuid())
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  farmerId   String?
+  farmer     Farmer?  @relation(fields: [farmerId], references: [id])
+  role       String   // FARMER | CONTRACTOR | COOPERATIVE
+  createdAt  DateTime @default(now())
+
+  @@index([contractId])
+}
+
+model ContractVersion {
+  id         String   @id @default(uuid())
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  version    Int
+  content    Json
+  hash       String
+  createdById String
+  createdAt  DateTime @default(now())
+
+  @@unique([contractId, version])
+}
+
+model Signature {
+  id         String          @id @default(uuid())
+  contractId String
+  contract   Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  signerId   String
+  role       String
+  method     SignatureMethod @default(OTP)
+  status     SignatureStatus @default(PENDING)
+  signatureHash String?
+  signedAt   DateTime?
+  ipAddress  String?
+  deviceInfo String?
+  createdAt  DateTime        @default(now())
+
+  @@index([contractId])
+  @@index([signerId])
+}
+
+// ============================================================
+// FINANCE
+// ============================================================
+
+model Loan {
+  id             String     @id @default(uuid())
+  loanNo         String     @unique
+  farmerId       String
+  farmer         Farmer     @relation(fields: [farmerId], references: [id])
+  contractId     String?
+  contract       Contract?  @relation(fields: [contractId], references: [id])
+  fiId           String     // Financial Institution identifier
+  requestedAmt   Float
+  approvedAmt    Float?
+  interestRate   Float?
+  status         LoanStatus @default(SUBMITTED)
+  purpose        String?
+  decidedAt      DateTime?
+  decisionNote   String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([farmerId])
+  @@index([status])
+  @@index([fiId])
+}
+
+model Voucher {
+  id           String        @id @default(uuid())
+  voucherNo    String        @unique
+  farmerId     String
+  farmer       Farmer        @relation(fields: [farmerId], references: [id])
+  contractId   String?
+  contract     Contract?     @relation(fields: [contractId], references: [id])
+  inputType    String        // SEED | FERTILIZER | ...
+  amount       Float
+  unit         String        @default("kg")
+  agroDealerId String?
+  status       VoucherStatus @default(ISSUED)
+  expiresAt    DateTime
+  redeemedAt   DateTime?
+  createdAt    DateTime      @default(now())
+
+  @@index([farmerId])
+  @@index([status])
+}
+
+model Payment {
+  id           String        @id @default(uuid())
+  paymentNo    String        @unique
+  contractId   String?
+  contract     Contract?     @relation(fields: [contractId], references: [id])
+  payerId      String
+  payeeId      String
+  grossAmount  Float
+  loanDeduction Float        @default(0)
+  netAmount    Float
+  status       PaymentStatus @default(PENDING)
+  channel      String        // BANK | MOBILE_MONEY | USSD
+  externalRef  String?
+  processedAt  DateTime?
+  failureNote  String?
+  createdAt    DateTime      @default(now())
+
+  @@index([contractId])
+  @@index([status])
+}
+
+// ============================================================
+// MONITORING
+// ============================================================
+
+model MonitoringReport {
+  id         String         @id @default(uuid())
+  contractId String?
+  type       MonitoringType
+  agentId    String
+  farmerId   String?
+  gpsLat     Float?
+  gpsLng     Float?
+  findings   Json
+  score      Float?
+  createdAt  DateTime       @default(now())
+
+  @@index([contractId])
+  @@index([agentId])
+}
+
+// ============================================================
+// GRIEVANCES
+// ============================================================
+
+model Grievance {
+  id             String           @id @default(uuid())
+  ticketNo       String           @unique
+  category       GrievanceCategory
+  description    String
+  raisedById     String
+  raisedByFarmer Farmer?          @relation("grievance_raiser", fields: [raisedByFarmerId], references: [id])
+  raisedByFarmerId String?
+  contractId     String?
+  status         GrievanceStatus  @default(OPEN)
+  assignedToId   String?
+  slaDueAt       DateTime?
+  resolutionNote String?
+  resolvedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([status])
+  @@index([assignedToId])
+}
+
+// ============================================================
+// AUDIT (IMMUTABLE — APPEND-ONLY)
+// ============================================================
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  actorId    String?
+  actor      User?       @relation("actor", fields: [actorId], references: [id])
+  action     AuditAction
+  entity     String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  result     String      @default("SUCCESS")
+  createdAt  DateTime    @default(now())
+
+  @@index([entity, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@index([action])
+}
