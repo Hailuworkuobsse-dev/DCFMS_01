@@ -7,7 +7,7 @@
  * (src/lib/api/client.ts) expects, so no React code needs to change.
  *
  * Enable/disable with BACKEND_ENABLED (default true) and point at the API
- * with BACKEND_URL (default http://localhost:3001/api/v1).
+ * with BACKEND_URL (default http://localhost:3151/api/v1).
  */
 import crypto from 'node:crypto';
 import type {
@@ -39,7 +39,7 @@ import type {
 // Configuration
 // ---------------------------------------------------------------------------
 
-const BACKEND_URL = (process.env.BACKEND_URL || 'http://localhost:3001/api/v1').replace(/\/$/, '');
+const BACKEND_URL = (process.env.BACKEND_URL || 'http://localhost:3151/api/v1').replace(/\/$/, '');
 const BACKEND_ENABLED = (process.env.BACKEND_ENABLED ?? 'true') !== 'false';
 
 export function backendEnabled(): boolean {
