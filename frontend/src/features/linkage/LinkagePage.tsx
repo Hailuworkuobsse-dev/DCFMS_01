@@ -154,7 +154,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-forest-800 hover:bg-forest-900 shadow-xs"
             >
               <Plus className="w-4 h-4" />
-              <span>{t('linkage.publishDemand', 'Publish Buyer Demand')}</span>
+              <span>{t('linkage.publishDemand', 'Create Market Linkage')}</span>
             </button>
           </Can>
           </div>
@@ -166,7 +166,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
           <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
-            Registered Buyer Demands
+            Registered Market Linkages
           </p>
           <p className="text-2xl font-bold font-mono text-stone-900 mt-1">{linkages.length.toLocaleString()} Demands</p>
           <p className="text-xs text-stone-500 mt-1">Total estimated production across linked farmers</p>
@@ -174,7 +174,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
 
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
           <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
-            Total Demand Volume
+            Total Estimated Volume
           </p>
           <p className="text-2xl font-bold font-mono text-forest-800 mt-1">{totalDemandQt ? `${(totalDemandQt / 10).toLocaleString()} MT` : '—'}</p>
           <p className="text-xs text-stone-500 mt-1">Calculated from available demand records</p>
@@ -182,7 +182,7 @@ export const LinkagePage: React.FC<LinkagePageProps> = ({ onNavigate }) => {
 
         <div className="bg-white border border-stone-200 p-4 shadow-xs">
           <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
-            Matched Demand Records
+            Matched Linkages
           </p>
           <p className="text-2xl font-bold font-mono text-harvest-700 mt-1">{matchedDemandCount.toLocaleString()}</p>
           <p className="text-xs text-stone-500 mt-1">Records currently marked as matched</p>
