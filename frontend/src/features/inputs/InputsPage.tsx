@@ -42,10 +42,7 @@ export const InputsPage: React.FC<InputsPageProps> = () => {
     if (!redeemingVoucher) return;
     setIsRedeeming(true);
     try {
-      await api.inputs.redeemVoucher(redeemingVoucher.id, {
-        supplierId: 'sup-001',
-        otpCode: otpCode || '123456',
-      });
+      await api.inputs.redeemVoucher(redeemingVoucher.voucherCode, { otpCode });
       setRedeemingVoucher(null);
       setOtpCode('');
       await fetchVouchers();

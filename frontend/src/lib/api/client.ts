@@ -32,7 +32,7 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL = '/api';
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
@@ -146,11 +146,11 @@ export const api = {
         auditLogs: AuditLogEntry[];
       }>(`/contracts/${id}`),
     create: (data: any) => apiClient.post<{ contract: Contract }>('/contracts', data),
-    sign: (id: string, data: { party: string; method: string; otpCode?: string }) =>
+    sign: (id: string, data: { faydaId: string; otpCode: string; consent: boolean }) =>
       apiClient.post<{ contract: Contract }>(`/contracts/${id}/sign-otp`, {
-        faydaId: '987654321012',
-        otp: data.otpCode || '123456',
-        acceptDeclaration: true,
+        faydaId: data.faydaId,
+        otp: data.otpCode,
+        consent: data.consent,
       }),
     endorse: (id: string, data: { notes?: string }) =>
       apiClient.post<{ contract: Contract }>(`/contracts/${id}/decision`, {
@@ -166,11 +166,10 @@ export const api = {
   inputs: {
     listVouchers: () => apiClient.get<{ vouchers: InputVoucher[]; inventory: any[] }>('/vouchers'),
     issueVoucher: (data: any) => apiClient.post<{ voucher: InputVoucher }>('/vouchers/issue', data),
-    redeemVoucher: (_id: string, data: { supplierId?: string; otpCode: string; voucherCode?: string }) =>
+    redeemVoucher: (voucherCode: string, data: { otpCode: string }) =>
       apiClient.post<{ voucher: InputVoucher }>('/vouchers/redeem', {
-        voucherCode: data.voucherCode || 'VCH-ETH-4001',
+        voucherCode,
         otpCode: data.otpCode,
-        dealerFaydaId: '123456789012',
       }),
   },
   finance: {
@@ -233,10 +232,7 @@ export const api = {
       }),
   },
   admin: {
-    getAuditLogs: async () => {
-      const res = await apiClient.get<DashboardPayload>('/dashboard');
-      return { logs: res.auditLogs };
-    },
+    getAuditLogs: () => apiClient.get<{ logs: AuditLogEntry[] }>('/admin/audit'),
     getUsers: () => apiClient.get<{ users: AuthUser[] }>('/admin/users'),
   },
 };

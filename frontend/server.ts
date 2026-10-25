@@ -747,6 +747,11 @@ async function startServer() {
         return;
       }
 
+      if (parsed.data.faydaId !== req.user!.faydaId) {
+        res.status(403).json({ code: 'SIGNER_ID_MISMATCH', messageKey: 'errors.forbidden' });
+        return;
+      }
+
       // Demo OTP accept 123456
       if (parsed.data.otp !== '123456') {
         res.status(400).json({ code: 'INVALID_OTP', messageKey: 'errors.invalidOtp' });

@@ -29,7 +29,7 @@ export const ContractDetailPage: React.FC<ContractDetailPageProps> = ({
   contractId,
 }) => {
   const { t } = useTranslation();
-  const { currentRole } = useAppStore();
+  const { currentUser } = useAppStore();
   const [contract, setContract] = useState<Contract | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
@@ -71,12 +71,14 @@ export const ContractDetailPage: React.FC<ContractDetailPageProps> = ({
   const minPurity = contract.qualitySpecs?.minPurityPercent ?? 98.0;
   const grade = contract.qualitySpecs?.grade || contract.qualityGrade || 'Grade 1';
 
-  const handleSign = async (data: { method: 'otp' | 'fayda_biometric'; otpCode?: string }) => {
-    const party = currentRole.includes('Contractor') ? 'contractor' : 'farmer';
+  const handleSign = async (data: { otpCode: string; declarationAccepted: boolean }) => {
+    if (!currentUser?.faydaId) {
+      throw new Error('A verified Fayda ID is required to sign this contract.');
+    }
     await api.contracts.sign(contract.id, {
-      party,
-      method: data.method,
+      faydaId: currentUser.faydaId,
       otpCode: data.otpCode,
+      consent: data.declarationAccepted,
     });
     await fetchContract();
   };

@@ -44,3 +44,5 @@ npm test
 # Run full-stack dev server (Express + Vite on Port 3000)
 npm run dev
 ```
+
+The Express API and frontend are served together; the UI uses cookie-backed `/api` requests by default. Set `VITE_API_BASE_URL` in the frontend environment to change the API base path before starting the server or building the frontend. Keep `/api` for the integrated Express server.

@@ -2,13 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ShieldAlert,
-  Server,
-  Database,
-  Lock,
-  CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  Hash,
   Download,
 } from 'lucide-react';
 import { PageHeader } from '../../components/primitives/PageHeader';
@@ -21,7 +14,7 @@ export interface AdminPageProps {
   onNavigate: (path: string) => void;
 }
 
-export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
+export const AdminPage: React.FC<AdminPageProps> = () => {
   const { t } = useTranslation();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -51,11 +44,11 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
 
   const columns: Column<AuditLogEntry>[] = [
     {
-      key: 'sequenceNumber',
+      key: 'id',
       header: 'Seq #',
       render: (item) => (
         <span className="font-mono text-xs font-bold text-stone-900">
-          #{item.sequenceNumber}
+          #{item.id}
         </span>
       ),
     },
@@ -66,7 +59,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
         <div>
           <p className="font-mono text-xs font-semibold text-stone-900">{item.action}</p>
           <p className="text-[11px] text-stone-500 font-mono">
-            {item.entityType} • {item.entityId}
+            {item.resource} • {item.resourceId}
           </p>
         </div>
       ),
@@ -94,8 +87,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
       key: 'hash',
       header: 'SHA-256 Cryptographic Hash',
       render: (item) => (
-        <div className="font-mono text-[10px] text-stone-500 max-w-[160px] truncate" title={item.currentHash}>
-          {item.currentHash.slice(0, 16)}...
+        <div className="font-mono text-[10px] text-stone-500 max-w-[160px] truncate" title={item.entryHash}>
+          {item.entryHash.slice(0, 16)}...
         </div>
       ),
     },
