@@ -99,7 +99,7 @@ export const AppShell: React.FC<AppShellProps> = ({
       </a>
 
       {/* Top Banner & Header */}
-      <header className="sticky top-0 z-30 bg-white border-b border-stone-200">
+      <header className="sticky top-0 z-30 border-b border-stone-200/80 bg-white/80 backdrop-blur-xl">
         {/* National Flag Accent Strip */}
         <div className="h-1 flex w-full">
           <div className="flex-1 bg-forest-700" />
@@ -108,13 +108,13 @@ export const AppShell: React.FC<AppShellProps> = ({
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14">
+          <div className="flex items-center justify-between h-16">
             {/* Left: Mobile hamburger & Logo */}
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="lg:hidden p-1.5 text-stone-600 hover:text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900"
+                className="lg:hidden rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm hover:text-stone-900 focus:outline-none focus:ring-2 focus:ring-forest-700"
                 aria-label={t('common.toggleNavigation', 'Toggle navigation menu')}
                 aria-expanded={isMobileMenuOpen}
               >
@@ -129,9 +129,9 @@ export const AppShell: React.FC<AppShellProps> = ({
                 type="button"
                 onClick={() => onNavigate('/dashboard')}
                 aria-label={t('nav.dashboard', 'Dashboard')}
-                className="flex items-center gap-2.5 cursor-pointer text-left"
+                className="flex items-center gap-2.5 cursor-pointer text-left rounded-full border border-stone-200 bg-stone-50/80 px-2 py-1.5 shadow-sm transition hover:border-forest-200 hover:bg-stone-50"
               >
-                <div className="w-8 h-8 bg-forest-800 text-harvest-400 flex items-center justify-center font-bold text-sm border border-forest-900 shadow-xs">
+                <div className="flex h-9 w-9 items-center justify-center border border-forest-900 bg-gradient-to-br from-forest-800 to-forest-700 font-bold text-sm text-harvest-400 shadow-sm">
                   ATI
                 </div>
                 <div>
@@ -139,7 +139,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                     <span className="font-extrabold text-sm tracking-tight text-stone-900">
                       DCFMS
                     </span>
-                    <span className="text-[10px] font-mono px-1 bg-stone-100 border border-stone-300 text-stone-600">
+                    <span className="rounded border border-stone-200 bg-stone-100 px-1 text-[10px] font-mono text-stone-600">
                       ET
                     </span>
                   </div>
