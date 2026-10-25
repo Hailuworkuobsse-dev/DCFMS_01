@@ -1,0 +1,8 @@
+{
+  "name": "EthioFarm Connect",
+  "description": "A bilingual, low-bandwidth contract farming management system for the Agricultural Transformation Institute, featuring secure, role-based lifecycle management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Plus Jakarta Sans", "Noto Sans Ethiopic", system-ui, sans-serif;
+  --font-sans: "Public Sans", "Noto Sans Ethiopic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Noto Sans Ethiopic", ui-monospace, SFMono-Regular, monospace;
+
+  /* Agricultural Green (Primary) */
+  --color-agri-50: #f0fdf4;
+  --color-agri-100: #dcfce7;
+  --color-agri-200: #bbf7d0;
+  --color-agri-300: #86efac;
+  --color-agri-500: #22c55e;
+  --color-agri-600: #16a34a;
+  --color-agri-700: #15803d;
+  --color-agri-800: #166534;
+  --color-agri-900: #14532d;
+  --color-agri-950: #052e16;
+
+  /* Earth Brown (Secondary) */
+  --color-earth-50: #fdf8f6;
+  --color-earth-100: #f2e8e5;
+  --color-earth-200: #eaddd7;
+  --color-earth-600: #8c5a3c;
+  --color-earth-700: #6f452c;
+  --color-earth-800: #5c3a24;
+  --color-earth-900: #432818;
+
+  /* Harvest Gold (Accent) */
+  --color-harvest-50: #fffbeb;
+  --color-harvest-100: #fef3c7;
+  --color-harvest-200: #fde68a;
+  --color-harvest-600: #d97706;
+  --color-harvest-700: #b45309;
+  --color-harvest-800: #92400e;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+  }
+
+  html[lang="am"] {
+    line-height: 1.72;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-agri-700);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
