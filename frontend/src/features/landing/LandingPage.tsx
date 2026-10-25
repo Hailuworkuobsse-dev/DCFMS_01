@@ -70,7 +70,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginNavigate }) => 
   );
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900">
+    <div className="landing-page min-h-screen bg-stone-50 text-stone-900">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:bg-stone-900 focus:text-white focus:px-4 focus:py-2"
@@ -78,8 +78,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginNavigate }) => 
         {t('landing.skipToContent', 'Skip to main content')}
       </a>
 
-      <header className="sticky top-0 z-40 border-b border-stone-200 bg-white/90 backdrop-blur-sm">
-        <div className="h-1 w-full flex">
+      <header className="landing-header sticky top-0 z-40 border-b border-stone-200 bg-white/90 backdrop-blur-sm">
+        <div className="h-1 w-full flex" aria-hidden="true">
           <div className="flex-1 bg-forest-700" />
           <div className="flex-1 bg-harvest-500" />
           <div className="flex-1 bg-rose-700" />
@@ -91,8 +91,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginNavigate }) => 
               ATI
             </div>
             <div>
-              <div className="text-base font-black tracking-tight text-stone-900">DCFMS</div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-stone-500">
+              <div className="brand-wordmark text-lg font-extrabold tracking-tight text-stone-900">DCFMS</div>
+              <div className="brand-subtitle text-[10px] font-semibold uppercase tracking-[0.15em] text-stone-500">
                 {t('landing.institute', 'Agricultural Transformation Institute')}
               </div>
             </div>
@@ -166,14 +166,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginNavigate }) => 
       </header>
 
       <main id="main-content" className="overflow-hidden">
-        <section id="top" className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-16 pt-8 sm:px-6 lg:px-8 lg:pb-20 lg:pt-16">
+        <section id="top" className="landing-hero mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-16 pt-10 sm:px-6 lg:px-8 lg:pb-24 lg:pt-20">
           <div className="grid items-center gap-10 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="max-w-2xl">
               <div className="inline-flex items-center gap-2 rounded-full border border-agri-200 bg-agri-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-agri-800">
                 <Leaf className="h-3.5 w-3.5" />
                 {t('landing.badge', 'Transparent. Inclusive. Accountable.')}
               </div>
-              <h1 className="mt-6 text-4xl font-black tracking-tight text-stone-900 sm:text-5xl lg:text-6xl">
+              <h1 className="landing-hero-title mt-6 text-4xl font-black tracking-tight text-stone-900 sm:text-5xl lg:text-6xl">
                 {t('landing.hero.title', 'Digitizing Ethiopia’s Contract Farming, End to End')}
               </h1>
               <p className="mt-5 max-w-xl text-lg text-stone-700">
@@ -208,7 +208,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginNavigate }) => 
             </div>
 
             <div className="relative">
-              <div className="rounded-3xl border border-stone-200 bg-gradient-to-br from-agri-50 via-white to-harvest-50 p-6 shadow-[0_25px_60px_rgba(22,38,18,0.08)]">
+              <div className="hero-dashboard rounded-3xl border border-stone-200 bg-gradient-to-br from-agri-50 via-white to-harvest-50 p-6 shadow-[0_25px_60px_rgba(22,38,18,0.08)]">
                 <div className="rounded-2xl border border-stone-200 bg-white p-4">
                   <div className="mb-4 flex items-center justify-between">
                     <div>
