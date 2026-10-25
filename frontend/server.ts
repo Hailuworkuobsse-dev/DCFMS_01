@@ -1,10 +1,29 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
+
+// Minimal .env loader (tsx does not load it automatically; existing
+// environment variables always win).
+(function loadDotEnv() {
+  const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq < 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    if (key in process.env) continue;
+    process.env[key] = trimmed.slice(eq + 1).trim();
+  }
+})();
+
 import { createInitialSeedDatabase } from './src/server/seedData';
+import * as backendAdapter from './src/server/backendAdapter';
 import { ROLE_REGISTRY, resolveRoleId } from './src/lib/rbac/roles';
 import {
   getActiveRole,
@@ -48,9 +67,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const db = createInitialSeedDatabase();
-const sessions = new Map<string, string>(); // sessionToken -> userId
+type SessionEntry =
+  | { kind: 'mock'; userId: string }
+  | { kind: 'backend'; backend: backendAdapter.BackendSession };
+const sessions = new Map<string, SessionEntry>(); // sessionToken -> session entry
 const COOKIE_NAME = 'dcfms_session';
 const isDevelopment = process.env.NODE_ENV === 'development';
+
+/** Real (seeded) backend accounts surfaced to the dev login page when the
+ *  NestJS backend integration is enabled. Password for all: Password123! */
+const REAL_BACKEND_DEMO_ACCOUNTS = [
+  { id: 'seed-contractor', email: 'contractor@acme.et', fullName: 'Acme Agri Exports', fullNameAm: 'Acme Agri Exports', primaryRole: 'Contractor', scopeLabel: 'Federal', orgName: 'Acme Agri Exports', password: 'Password123!' },
+  { id: 'seed-farmer', email: '+251911000004', fullName: 'Abebe Bekele', fullNameAm: 'አበበ በቀለ', primaryRole: 'ProducerIndividual', scopeLabel: 'Kebele 01, Adama', orgName: '', password: 'Password123!' },
+  { id: 'seed-moa', email: 'moa@dcfms.et', fullName: 'MoA Approver', fullNameAm: 'MoA Approver', primaryRole: 'MoAFederal', scopeLabel: 'Federal', orgName: 'Ministry of Agriculture', password: 'Password123!' },
+  { id: 'seed-wboa', email: 'wboa@dcfms.et', fullName: 'WBoA Officer — Adama', fullNameAm: 'WBoA Officer', primaryRole: 'WBoAWoreda', scopeLabel: 'Adama, Oromia', orgName: 'WBoA Adama', password: 'Password123!' },
+  { id: 'seed-fi', email: 'fi@cbe.et', fullName: 'CBE Loan Officer', fullNameAm: 'CBE Loan Officer', primaryRole: 'FinancialInstitution', scopeLabel: 'Federal', orgName: 'Commercial Bank of Ethiopia', password: 'Password123!' },
+  { id: 'seed-admin', email: 'admin@dcfms.et', fullName: 'System Admin', fullNameAm: 'System Admin', primaryRole: 'SystemAdmin', scopeLabel: 'Federal', orgName: 'ATI', password: 'Password123!' },
+];
 
 function createAuditEntry(
   user: AuthUser,
@@ -247,6 +280,12 @@ function canAccessContract(user: AuthUser, contract: Contract): boolean {
 interface AuthedRequest extends Request {
   user?: AuthUser;
   requestId?: string;
+  backendSession?: backendAdapter.BackendSession;
+}
+
+function respondBackendError(res: Response, e: unknown) {
+  const mapped = backendAdapter.toErrorResponse(e);
+  res.status(mapped.status).json(mapped.body);
 }
 
 function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
@@ -254,11 +293,16 @@ function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
   res.setHeader('X-Request-Id', req.requestId);
 
   const token = req.cookies?.[COOKIE_NAME];
-  if (token && sessions.has(token)) {
-    const userId = sessions.get(token)!;
-    const found = db.users.find((u) => u.id === userId);
-    if (found) {
-      req.user = found;
+  const entry = token ? sessions.get(token) : undefined;
+  if (entry) {
+    if (entry.kind === 'mock') {
+      const found = db.users.find((u) => u.id === entry.userId);
+      if (found) {
+        req.user = found;
+      }
+    } else {
+      req.user = entry.backend.user;
+      req.backendSession = entry.backend;
     }
   }
   next();
@@ -343,6 +387,10 @@ async function startServer() {
       res.status(404).json({ code: 'NOT_FOUND' });
       return;
     }
+    if (backendAdapter.backendEnabled()) {
+      res.json({ accounts: REAL_BACKEND_DEMO_ACCOUNTS, backend: true });
+      return;
+    }
     res.json({
       accounts: db.users.map((u) => ({
         id: u.id,
@@ -356,11 +404,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/auth/login', (req: AuthedRequest, res: Response) => {
-    if (!isDevelopment) {
-      res.status(503).json({ code: 'AUTH_PROVIDER_UNCONFIGURED', messageKey: 'errors.authUnavailable' });
-      return;
-    }
+  app.post('/api/auth/login', async (req: AuthedRequest, res: Response) => {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
@@ -373,6 +417,41 @@ async function startServer() {
         messageKey: 'errors.validationFailed',
         fieldErrors,
       });
+      return;
+    }
+
+    // --- Real backend authentication (JWT via BFF session) ---
+    if (backendAdapter.backendEnabled()) {
+      try {
+        const bsess = await backendAdapter.login(parsed.data.email.trim(), parsed.data.password);
+        const sessionToken = crypto.randomBytes(24).toString('hex');
+        sessions.set(sessionToken, { kind: 'backend', backend: bsess });
+        res.cookie(COOKIE_NAME, sessionToken, {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 1000 * 60 * 60 * 12,
+        });
+        createAuditEntry(
+          bsess.user,
+          'auth:login',
+          'user',
+          bsess.user.id,
+          `Signed in via DCFMS backend API (${bsess.user.primaryRole}).`
+        );
+        res.json({
+          user: bsess.user,
+          permissions: getEffectiveUserPermissions(bsess.user),
+        });
+      } catch (e) {
+        respondBackendError(res, e);
+      }
+      return;
+    }
+
+    // --- Mock authentication (BACKEND_ENABLED=false) ---
+    if (!isDevelopment) {
+      res.status(503).json({ code: 'AUTH_PROVIDER_UNCONFIGURED', messageKey: 'errors.authUnavailable' });
       return;
     }
 
@@ -389,7 +468,7 @@ async function startServer() {
     }
 
     const sessionToken = crypto.randomBytes(24).toString('hex');
-    sessions.set(sessionToken, user.id);
+    sessions.set(sessionToken, { kind: 'mock', userId: user.id });
     user.lastLoginAt = new Date().toISOString();
 
     res.cookie(COOKIE_NAME, sessionToken, {
@@ -512,10 +591,46 @@ async function startServer() {
   });
 
   // --- DASHBOARDS ROUTER DATA ---
-  app.get('/api/dashboard', requireResourceAction('dashboard', 'read'), (req: AuthedRequest, res: Response) => {
+  app.get('/api/dashboard', requireResourceAction('dashboard', 'read'), async (req: AuthedRequest, res: Response) => {
     const user = req.user!;
     const scopeInfo = getActiveScopeInfo(user);
     const role = scopeInfo.roleId;
+
+    if (req.backendSession) {
+      try {
+        const data = await backendAdapter.dashboardData(req.backendSession);
+        const permissions = getEffectiveUserPermissions(user);
+        const payload: DashboardPayload = {
+          roleId: role,
+          scopeLabel: scopeInfo.scopeLabel,
+          kpis: data.kpis,
+          seriesData: data.seriesData,
+          distributionData: data.distributionData,
+          contracts: data.contracts,
+          linkages: scopeLinkagesForUser(user),
+          vouchers: data.vouchers,
+          loans: data.loans,
+          insurances: scopeInsuranceForUser(user),
+          settlements: data.settlements,
+          monitoring: data.monitoring,
+          grievances: data.grievances,
+          integrations: hasResourceAction(permissions, 'integration', 'read', scopeInfo.scopeType)
+            ? db.integrations
+            : [],
+          auditLogs: data.auditLogs,
+          usersCount: data.usersCount,
+          competencyApps: role === 'EAAOfficer' || role === 'ATISuperAdmin' || role === 'SystemAdmin'
+            ? db.competencyApps
+            : db.competencyApps.filter((application) => application.contractorOrgId === scopeInfo.orgId),
+        };
+        res.json(payload);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
+
     const scopedContracts = scopeContractsForUser(user);
 
     const totalValue = scopedContracts.reduce((sum, c) => sum + c.totalValueEtb, 0);
@@ -602,9 +717,18 @@ async function startServer() {
   });
 
   // --- CONTRACTS MODULE ---
-  app.get('/api/contracts', requireResourceAction('contract', 'read'), (req: AuthedRequest, res: Response) => {
-    let items = scopeContractsForUser(req.user!);
+  app.get('/api/contracts', requireResourceAction('contract', 'read'), async (req: AuthedRequest, res: Response) => {
     const { status, commodity, region, q } = req.query as Record<string, string | undefined>;
+    if (req.backendSession) {
+      try {
+        res.json(await backendAdapter.listContracts(req.backendSession, { status, commodity, region, q }));
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
+    let items = scopeContractsForUser(req.user!);
     if (status && status !== 'ALL') items = items.filter((c) => c.status === status);
     if (commodity && commodity !== 'ALL') items = items.filter((c) => c.commodity === commodity);
     if (region && region !== 'ALL') items = items.filter((c) => c.region === region);
@@ -621,7 +745,16 @@ async function startServer() {
     res.json({ contracts: items });
   });
 
-  app.get('/api/contracts/:id', requireResourceAction('contract', 'read'), (req: AuthedRequest, res: Response) => {
+  app.get('/api/contracts/:id', requireResourceAction('contract', 'read'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        res.json(await backendAdapter.getContractDetail(req.backendSession, String(req.params.id)));
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const scoped = scopeContractsForUser(req.user!);
     const contract = scoped.find((c) => c.id === req.params.id);
     if (!contract) {
@@ -658,7 +791,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/contracts', requireResourceAction('contract', 'create'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/contracts', requireResourceAction('contract', 'create'), async (req: AuthedRequest, res: Response) => {
     const parsed = contractWizardSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
@@ -666,6 +799,23 @@ async function startServer() {
     }
 
     const data = parsed.data;
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.createContractFromWizard(req.backendSession, data);
+        createAuditEntry(
+          req.user!,
+          'contract:create:org',
+          'contract',
+          result.contract.id,
+          `Drafted agricultural contract ${result.contract.contractNumber} (${result.contract.commodity}).`
+        );
+        res.status(201).json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const user = req.user!;
     const seq = db.contracts.length + 1;
     const regionCode = data.region.slice(0, 2).toUpperCase();
@@ -723,10 +873,55 @@ async function startServer() {
     res.status(201).json({ contract: newContract });
   });
 
+  // Request a signing OTP (real backend: SMS-simulated 6-digit code; in dev the
+  // code is returned so the UI can display it until an SMS gateway is wired).
+  app.post('/api/contracts/:id/request-otp', requireAuth, async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        res.json(await backendAdapter.requestSignOtp(req.backendSession, String(req.params.id)));
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
+    res.json({ message: 'OTP issued (demo)', devOtp: isDevelopment ? '123456' : undefined });
+  });
+
   app.post(
     '/api/contracts/:id/sign-otp',
     requireResourceAction('contract', 'sign'),
-    (req: AuthedRequest, res: Response) => {
+    async (req: AuthedRequest, res: Response) => {
+      if (req.backendSession) {
+        const body = (req.body ?? {}) as { otp?: string; consent?: boolean; acceptDeclaration?: boolean };
+        if (!body.otp || !/^\d{6}$/.test(body.otp)) {
+          res.status(400).json({ code: 'INVALID_OTP', messageKey: 'errors.invalidOtp' });
+          return;
+        }
+        if (body.consent !== true && body.acceptDeclaration !== true) {
+          res.status(422).json({
+            code: 'VALIDATION_ERROR',
+            messageKey: 'errors.validationFailed',
+            fieldErrors: { consent: 'validation.consentRequired' },
+          });
+          return;
+        }
+        try {
+          const result = await backendAdapter.signContract(req.backendSession, String(req.params.id), body.otp);
+          createAuditEntry(
+            req.user!,
+            'contract:sign:own',
+            'contract',
+            String(req.params.id),
+            `E-Signed contract ${result.contract.contractNumber} via backend OTP signature.`
+          );
+          res.json(result);
+          return;
+        } catch (e) {
+          respondBackendError(res, e);
+          return;
+        }
+      }
       const contract = db.contracts.find((c) => c.id === req.params.id);
       if (!contract) {
         res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
@@ -783,13 +978,13 @@ async function startServer() {
   app.post(
     '/api/contracts/:id/decision',
     requireResourceAction('contract', 'approve'),
-    (req: AuthedRequest, res: Response) => {
+    async (req: AuthedRequest, res: Response) => {
       const contract = db.contracts.find((c) => c.id === req.params.id);
-      if (!contract) {
+      if (!contract && !req.backendSession) {
         res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
         return;
       }
-      if (!canAccessContract(req.user!, contract)) {
+      if (contract && !canAccessContract(req.user!, contract)) {
         res.status(403).json({ code: 'FORBIDDEN', messageKey: 'errors.forbidden' });
         return;
       }
@@ -801,6 +996,33 @@ async function startServer() {
       }
 
       const { action, reason, notes } = parsed.data;
+      if (req.backendSession) {
+        try {
+          const result = await backendAdapter.decideContract(
+            req.backendSession,
+            String(req.params.id),
+            action,
+            reason,
+            notes
+          );
+          createAuditEntry(
+            req.user!,
+            `contract:${action}:woreda`,
+            'contract',
+            String(req.params.id),
+            `Contract ${result.contract.contractNumber} was ${action}d: ${reason}`
+          );
+          res.json(result);
+          return;
+        } catch (e) {
+          respondBackendError(res, e);
+          return;
+        }
+      }
+      if (!contract) {
+        res.status(404).json({ code: 'NOT_FOUND', messageKey: 'states.notFoundTitle' });
+        return;
+      }
       const activeScope = getActiveScopeInfo(req.user!);
       if (
         action === 'reject' &&
@@ -977,7 +1199,17 @@ async function startServer() {
   });
 
   // --- INPUTS & VOUCHERS ---
-  app.get('/api/vouchers', requireResourceAction('input_voucher', 'read'), (req: AuthedRequest, res: Response) => {
+  app.get('/api/vouchers', requireResourceAction('input_voucher', 'read'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        // Dealer inventory remains a mock-only concept until the backend adds it
+        res.json({ vouchers: await backendAdapter.listVouchers(req.backendSession), inventory: [] });
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const vouchers = scopeVouchersForUser(req.user!);
     const allowedContractIds = new Set(vouchers.map((voucher) => voucher.contractId));
     const inventory = getActiveScopeInfo(req.user!).orgId
@@ -989,11 +1221,22 @@ async function startServer() {
     });
   });
 
-  app.post('/api/vouchers/issue', requireResourceAction('input_voucher', 'create'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/vouchers/issue', requireResourceAction('input_voucher', 'create'), async (req: AuthedRequest, res: Response) => {
     const parsed = voucherIssueSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
+    }
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.issueVoucher(req.backendSession, parsed.data);
+        createAuditEntry(req.user!, 'input_voucher:create:org', 'input_voucher', result.voucher.id, `Issued voucher ${result.voucher.voucherCode}`);
+        res.status(201).json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
     }
     const contract = db.contracts.find((item) => item.id === parsed.data.contractId);
     if (!contract) {
@@ -1026,11 +1269,22 @@ async function startServer() {
     res.status(201).json({ voucher: newVoucher });
   });
 
-  app.post('/api/vouchers/redeem', requireResourceAction('input_voucher', 'verify'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/vouchers/redeem', requireResourceAction('input_voucher', 'verify'), async (req: AuthedRequest, res: Response) => {
     const parsed = voucherRedeemSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
+    }
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.redeemVoucher(req.backendSession, parsed.data);
+        createAuditEntry(req.user!, 'input_voucher:verify:org', 'input_voucher', result.voucher.id, `Redeemed voucher ${result.voucher.voucherCode} with OTP`);
+        res.json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
     }
     const vch = db.vouchers.find((v) => v.voucherCode.toLowerCase() === parsed.data.voucherCode.toLowerCase());
     if (!vch) {
@@ -1072,7 +1326,17 @@ async function startServer() {
     { resource: 'loan', action: 'read' },
     { resource: 'insurance', action: 'read' },
     { resource: 'settlement', action: 'read' },
-  ]), (req: AuthedRequest, res: Response) => {
+  ]), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        const fin = await backendAdapter.financeOverview(req.backendSession);
+        res.json({ ...fin, insurances: scopeInsuranceForUser(req.user!) });
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const financialInstitutions = db.users
       .filter((user) => user.scopedRoles.some((assignment) => assignment.roleId === 'FinancialInstitution'))
       .flatMap((user) => {
@@ -1088,11 +1352,22 @@ async function startServer() {
     });
   });
 
-  app.post('/api/loans/apply', requireResourceAction('loan', 'create'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/loans/apply', requireResourceAction('loan', 'create'), async (req: AuthedRequest, res: Response) => {
     const parsed = loanApplicationSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
+    }
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.applyLoan(req.backendSession, parsed.data);
+        createAuditEntry(req.user!, 'loan:create:own', 'loan', result.loan.id, `Submitted tripartite loan application ${result.loan.loanRef}`);
+        res.status(201).json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
     }
     const contract = db.contracts.find((item) => item.id === parsed.data.contractId);
     if (!contract) {
@@ -1163,7 +1438,34 @@ async function startServer() {
     res.status(201).json({ loan: newLoan });
   });
 
-  app.post('/api/loans/:id/decision', requireResourceAction('loan', 'approve'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/loans/:id/decision', requireResourceAction('loan', 'approve'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      const parsedB = loanDecisionSchema.safeParse(req.body);
+      if (!parsedB.success) {
+        res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsedB.error.issues });
+        return;
+      }
+      try {
+        const result = await backendAdapter.decideLoan(
+          req.backendSession,
+          String(req.params.id),
+          parsedB.data.action,
+          parsedB.data.reason
+        );
+        createAuditEntry(
+          req.user!,
+          `loan:${parsedB.data.action}:org`,
+          'loan',
+          String(req.params.id),
+          `${parsedB.data.action === 'approve' ? 'Approved' : 'Rejected'} loan ${result.loan.loanRef}`
+        );
+        res.json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const loan = db.loans.find((l) => l.id === req.params.id);
     if (!loan) {
       res.status(404).json({ code: 'NOT_FOUND' });
@@ -1196,7 +1498,18 @@ async function startServer() {
     res.json({ loan });
   });
 
-  app.post('/api/loans/:id/disburse', requireResourceAction('loan', 'update'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/loans/:id/disburse', requireResourceAction('loan', 'update'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.disburseLoan(req.backendSession, String(req.params.id));
+        createAuditEntry(req.user!, 'loan:update:org', 'loan', String(req.params.id), `Disbursed loan ${result.loan.loanRef}`);
+        res.json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const loan = db.loans.find((l) => l.id === req.params.id);
     if (!loan) {
       res.status(404).json({ code: 'NOT_FOUND' });
@@ -1217,7 +1530,18 @@ async function startServer() {
     res.json({ loan });
   });
 
-  app.post('/api/settlement/:id/release', requireResourceAction('settlement', 'update'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/settlement/:id/release', requireResourceAction('settlement', 'update'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.releaseSettlement(req.backendSession, String(req.params.id));
+        createAuditEntry(req.user!, 'settlement:update:org', 'settlement', String(req.params.id), `Released settlement ${result.settlement.settlementRef}`);
+        res.json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const record = db.settlements.find((s) => s.id === req.params.id);
     if (!record) {
       res.status(404).json({ code: 'NOT_FOUND' });
@@ -1237,7 +1561,18 @@ async function startServer() {
     res.json({ settlement: record });
   });
 
-  app.post('/api/settlement/:id/reconcile', requireResourceAction('settlement', 'update'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/settlement/:id/reconcile', requireResourceAction('settlement', 'update'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.reconcileSettlement(req.backendSession, String(req.params.id));
+        createAuditEntry(req.user!, 'settlement:update:org', 'settlement', String(req.params.id), `Reconciled settlement ${result.settlement.settlementRef}`);
+        res.json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const record = db.settlements.find((s) => s.id === req.params.id);
     if (!record) {
       res.status(404).json({ code: 'NOT_FOUND' });
@@ -1257,18 +1592,47 @@ async function startServer() {
   });
 
   // --- MONITORING ---
-  app.get('/api/monitoring', requireResourceAction('monitoring', 'read'), (req: AuthedRequest, res: Response) => {
+  app.get('/api/monitoring', requireResourceAction('monitoring', 'read'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        res.json({
+          reports: await backendAdapter.listMonitoringReports(req.backendSession),
+          advisories: db.advisories,
+        });
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     res.json({
       reports: scopeMonitoringForUser(req.user!),
       advisories: db.advisories,
     });
   });
 
-  app.post('/api/monitoring', requireResourceAction('monitoring', 'create'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/monitoring', requireResourceAction('monitoring', 'create'), async (req: AuthedRequest, res: Response) => {
     const parsed = monitoringReportSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
+    }
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.createMonitoringReport(req.backendSession, parsed.data);
+        createAuditEntry(
+          req.user!,
+          'monitoring:create:woreda',
+          'monitoring',
+          result.report.id,
+          `Submitted inspection report ${result.report.reportCode}`
+        );
+        res.status(201).json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
     }
     const contract = db.contracts.find((c) => c.id === parsed.data.contractId);
     if (!contract) {
@@ -1310,11 +1674,28 @@ async function startServer() {
     res.status(201).json({ report: newReport });
   });
 
-  app.post('/api/settlements', requireResourceAction('settlement', 'create'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/settlements', requireResourceAction('settlement', 'create'), async (req: AuthedRequest, res: Response) => {
     const parsed = settlementCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
+    }
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.createSettlement(req.backendSession, parsed.data);
+        createAuditEntry(
+          req.user!,
+          'settlement:create:org',
+          'settlement',
+          result.settlement.id,
+          `Created settlement for delivery ${result.settlement.deliveryReference}`
+        );
+        res.status(201).json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
     }
     const user = req.user!;
     const contract = db.contracts.find((item) => item.id === parsed.data.contractId);
@@ -1397,15 +1778,35 @@ async function startServer() {
   });
 
   // --- GRIEVANCES ---
-  app.get('/api/grievances', requireResourceAction('grievance', 'read'), (req: AuthedRequest, res: Response) => {
+  app.get('/api/grievances', requireResourceAction('grievance', 'read'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        res.json({ grievances: await backendAdapter.listGrievances(req.backendSession) });
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     res.json({ grievances: scopeGrievancesForUser(req.user!) });
   });
 
-  app.post('/api/grievances', requireResourceAction('grievance', 'create'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/grievances', requireResourceAction('grievance', 'create'), async (req: AuthedRequest, res: Response) => {
     const parsed = grievanceIntakeSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsed.error.issues });
       return;
+    }
+    if (req.backendSession) {
+      try {
+        const result = await backendAdapter.createGrievance(req.backendSession, parsed.data);
+        createAuditEntry(req.user!, 'grievance:create:own', 'grievance', result.grievance.id, `Filed grievance ${result.grievance.caseNumber}`);
+        res.status(201).json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
     }
     const contract = db.contracts.find((c) => c.id === parsed.data.contractId);
     if (!contract) {
@@ -1442,7 +1843,23 @@ async function startServer() {
     res.status(201).json({ grievance: newCase });
   });
 
-  app.post('/api/grievances/:id/escalate', requireResourceAction('grievance', 'escalate'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/grievances/:id/escalate', requireResourceAction('grievance', 'escalate'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      const parsedB = grievanceEscalationSchema.safeParse(req.body);
+      if (!parsedB.success) {
+        res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsedB.error.issues });
+        return;
+      }
+      try {
+        const result = await backendAdapter.escalateGrievance(req.backendSession, String(req.params.id), parsedB.data.reason);
+        createAuditEntry(req.user!, 'grievance:escalate:woreda', 'grievance', String(req.params.id), `Escalated case ${result.grievance.caseNumber}: ${parsedB.data.reason}`);
+        res.json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const item = db.grievances.find((g) => g.id === req.params.id);
     if (!item) {
       res.status(404).json({ code: 'NOT_FOUND' });
@@ -1489,7 +1906,23 @@ async function startServer() {
     res.json({ grievance: item });
   });
 
-  app.post('/api/grievances/:id/resolve', requireResourceAction('grievance', 'update'), (req: AuthedRequest, res: Response) => {
+  app.post('/api/grievances/:id/resolve', requireResourceAction('grievance', 'update'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      const parsedB = grievanceResolutionSchema.safeParse(req.body);
+      if (!parsedB.success) {
+        res.status(422).json({ code: 'VALIDATION_ERROR', issues: parsedB.error.issues });
+        return;
+      }
+      try {
+        const result = await backendAdapter.resolveGrievance(req.backendSession, String(req.params.id), parsedB.data.resolutionSummary);
+        createAuditEntry(req.user!, 'grievance:update:woreda', 'grievance', String(req.params.id), `Resolved grievance ${result.grievance.caseNumber}`);
+        res.json(result);
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     const item = db.grievances.find((g) => g.id === req.params.id);
     if (!item) {
       res.status(404).json({ code: 'NOT_FOUND' });
@@ -1553,7 +1986,16 @@ async function startServer() {
   });
 
   // --- ADMIN & RBAC ---
-  app.get('/api/admin/users', requireResourceAction('user', 'read'), (_req, res) => {
+  app.get('/api/admin/users', requireResourceAction('user', 'read'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        res.json({ users: await backendAdapter.listUsers(req.backendSession) });
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     res.json({ users: db.users });
   });
 
@@ -1633,7 +2075,16 @@ async function startServer() {
     res.json({ flag });
   });
 
-  app.get('/api/admin/audit', requireResourceAction('audit_log', 'read'), (_req, res) => {
+  app.get('/api/admin/audit', requireResourceAction('audit_log', 'read'), async (req: AuthedRequest, res: Response) => {
+    if (req.backendSession) {
+      try {
+        res.json({ logs: await backendAdapter.listAuditLogs(req.backendSession, 200) });
+        return;
+      } catch (e) {
+        respondBackendError(res, e);
+        return;
+      }
+    }
     res.json({ logs: db.auditLogs });
   });
 
@@ -1656,6 +2107,11 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`ATI DCFMS full-stack server running on http://0.0.0.0:${PORT}`);
+    if (backendAdapter.backendEnabled()) {
+      console.log(`Backend integration: ENABLED -> ${backendAdapter.backendUrl()}`);
+    } else {
+      console.log('Backend integration: DISABLED (in-memory mock mode)');
+    }
   });
 }
 

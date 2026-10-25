@@ -57,4 +57,21 @@ export class LoansService {
       where: filter, orderBy: { createdAt: 'desc' }, take: 200,
     });
   }
+
+  async disburse(id: string, actor: JwtUser) {
+    const loan = await this.prisma.loan.findUnique({ where: { id } });
+    if (!loan) throw new NotFoundException();
+    if (loan.status !== LoanStatus.APPROVED) {
+      throw new BadRequestException('Only an approved loan can be disbursed');
+    }
+    const updated = await this.prisma.loan.update({
+      where: { id },
+      data: { status: LoanStatus.DISBURSED },
+    });
+    await this.audit.log({
+      actorId: actor.sub, action: AuditAction.PAYOUT,
+      entity: 'Loan', entityId: id, after: { status: 'DISBURSED' },
+    });
+    return updated;
+  }
 }

@@ -65,8 +65,8 @@ async function main() {
 
   const farmer = await prisma.farmer.upsert({
     where: { userId: farmerUser.id },
-    update: {},
-    create: { userId: farmerUser.id, faydaFin: 'FIN-TEST-0001' },
+    update: { faydaFin: '123456789012' },
+    create: { userId: farmerUser.id, faydaFin: '123456789012' },
   });
 
   const contractorUser = await prisma.user.upsert({

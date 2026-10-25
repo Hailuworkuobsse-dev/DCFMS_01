@@ -1,0 +1,56 @@
+version: "3.9"
+
+# DCFMS full stack: PostgreSQL + NestJS API + React/BFF frontend
+#
+#   docker compose up --build
+#   → App:     http://localhost:3000        (login: contractor@acme.et / Password123!)
+#   → API:     http://localhost:3001/api/v1 (Swagger: http://localhost:3001/api/docs)
+#
+# NOTE: the api service runs with NODE_ENV=development so dev OTP codes are
+# surfaced for the e-signature demo flow. For real deployments set it to
+# production and wire an SMS gateway (see docs/INTEGRATION.md).
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: dcfms
+      POSTGRES_PASSWORD: dcfms_dev_password
+      POSTGRES_DB: dcfms
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dcfms"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://dcfms:dcfms_dev_password@db:5432/dcfms?schema=public
+      JWT_SECRET: compose_dev_secret_change_me_min_32_chars_long
+      JWT_EXPIRES_IN: 8h
+      JWT_REFRESH_SECRET: compose_dev_refresh_secret_change_me_32
+      JWT_REFRESH_EXPIRES_IN: 7d
+      BCRYPT_ROUNDS: 12
+      OTP_TTL_SECONDS: 300
+      AUDIT_ENABLED: "true"
+    depends_on:
+      db: { condition: service_healthy }
+    ports: ["3001:3000"]
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/main"
+
+  web:
+    build: ./frontend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      BACKEND_URL: http://api:3000/api/v1
+      BACKEND_ENABLED: "true"
+    depends_on:
+      - api
+    ports: ["3000:3000"]
+
+volumes:
+  pgdata:

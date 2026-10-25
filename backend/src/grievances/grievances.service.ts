@@ -17,6 +17,8 @@ export class GrievancesService {
     const grievance = await this.prisma.grievance.create({
       data: {
         ticketNo, category: dto.category, description: dto.description,
+        title: dto.title,
+        severity: dto.severity,
         contractId: dto.contractId,
         raisedById: actor.sub,
         raisedByFarmerId: dto.raisedByFarmerId,

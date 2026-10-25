@@ -1,7 +1,10 @@
 import { z } from 'zod';
 
 export const loginSchema = z.object({
-  email: z.string().email('validation.invalidEmail'),
+  // Accepts an email address OR a phone number (backend login identifier)
+  email: z
+    .string()
+    .regex(/^(?:[^@\s]+@[^@\s]+\.[^@\s]+|\+?[0-9]{9,15})$/, 'validation.invalidEmail'),
   password: z.string().min(6, 'validation.passwordMin'),
 });
 

@@ -146,9 +146,14 @@ export const api = {
         auditLogs: AuditLogEntry[];
       }>(`/contracts/${id}`),
     create: (data: any) => apiClient.post<{ contract: Contract }>('/contracts', data),
+requestOtp: (id: string) =>
+      apiClient.post<{ message?: string; devOtp?: string }>(`/contracts/${id}/request-otp`),
     sign: (id: string, data: { faydaId: string; otpCode: string; consent: boolean }) =>
       apiClient.post<{ contract: Contract }>(`/contracts/${id}/sign-otp`, {
-        faydaId: data.faydaId,
+        // The backend identifies the signer via JWT; the Fayda ID is only
+        // validated on the mock API path (12 digits) — fallback covers
+        // non-farmer backend sessions, which have no Fayda FIN.
+        faydaId: data.faydaId || '000000000000',
         otp: data.otpCode,
         consent: data.consent,
       }),

@@ -82,7 +82,9 @@ export class AuthService {
       ...tokens,
       user: {
         id: user.id, fullName: user.fullName, role: user.role,
-        adminLevel: user.adminLevel, region: user.region, woreda: user.woreda,
+        email: user.email, phone: user.phone,
+        adminLevel: user.adminLevel, region: user.region,
+        zone: user.zone, woreda: user.woreda, kebele: user.kebele,
       },
     };
   }

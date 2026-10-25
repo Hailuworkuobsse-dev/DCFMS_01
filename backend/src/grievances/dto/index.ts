@@ -3,6 +3,8 @@ import { GrievanceCategory } from '@prisma/client';
 
 export class CreateGrievanceDto {
   @IsEnum(GrievanceCategory) category: GrievanceCategory;
+  @IsOptional() @IsString() title?: string;
+  @IsOptional() @IsString() severity?: string;
   @IsString() description: string;
   @IsOptional() @IsString() contractId?: string;
   @IsOptional() @IsString() raisedByFarmerId?: string;

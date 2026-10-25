@@ -22,8 +22,18 @@ export class SignatureService {
 
     // Issues a 6-digit OTP (SHA-256-hashed at rest, TTL from OTP_TTL_SECONDS).
     // TODO(integration): real SMS delivery via Ethio Telecom / Twilio gateway.
-    await this.otp.issue(signerId, 'SIGN');
-    return { message: 'OTP issued', deliveredVia: 'SMS' };
+    const code = await this.otp.issue(signerId, 'SIGN');
+
+    const response: { message: string; deliveredVia: string; devOtp?: string } = {
+      message: 'OTP issued',
+      deliveredVia: 'SMS',
+    };
+    // Until a real SMS gateway is wired, expose the code in non-production
+    // environments so E2E flows (and the frontend OTP modal) are testable.
+    if (process.env.NODE_ENV !== 'production') {
+      response.devOtp = code;
+    }
+    return response;
   }
 
   /** Sign a contract using OTP (primary path per ToR). */

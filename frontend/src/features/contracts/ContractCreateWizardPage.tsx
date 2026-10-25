@@ -9,11 +9,9 @@ import {
   ArrowRight,
   ArrowLeft,
   AlertCircle,
-  FileText,
 } from 'lucide-react';
 import { PageHeader } from '../../components/primitives/PageHeader';
 import { api } from '../../lib/api/client';
-import { useAppStore } from '../../store/useAppStore';
 import { formatEtb } from '../../lib/utils/format';
 
 export interface ContractCreateWizardPageProps {
@@ -24,7 +22,6 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
   onNavigate,
 }) => {
   const { t } = useTranslation();
-  const { currentUser, isOnline, isOfflineSimulated } = useAppStore();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,7 +172,6 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
           { num: 3, label: t('wizard.stepPricing', 'Pricing & Escrow'), icon: Banknote },
           { num: 4, label: t('wizard.stepLegal', 'Legal & Review'), icon: Scale },
         ].map((step) => {
-          const Icon = step.icon;
           const isActive = currentStep === step.num;
           const isCompleted = currentStep > step.num;
           return (

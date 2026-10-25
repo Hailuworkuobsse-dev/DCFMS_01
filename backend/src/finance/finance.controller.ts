@@ -20,7 +20,7 @@ export class FinanceController {
 
   // ---- LOANS ----
   @Post('loans')
-  @Roles(Role.CONTRACTOR, Role.FI_OFFICER, Role.COOPERATIVE)
+  @Roles(Role.CONTRACTOR, Role.FI_OFFICER, Role.COOPERATIVE, Role.FARMER)
   createLoan(@Body() dto: CreateLoanDto, @CurrentUser() user: JwtUser) {
     return this.loans.create(dto, user);
   }
@@ -38,6 +38,12 @@ export class FinanceController {
   @Roles(Role.FI_OFFICER)
   decideLoan(@Param('id') id: string, @Body() dto: DecideLoanDto, @CurrentUser() user: JwtUser) {
     return this.loans.decide(id, dto, user);
+  }
+
+  @Patch('loans/:id/disburse')
+  @Roles(Role.FI_OFFICER)
+  disburseLoan(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.loans.disburse(id, user);
   }
 
   // ---- VOUCHERS ----

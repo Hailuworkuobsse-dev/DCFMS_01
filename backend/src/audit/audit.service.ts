@@ -35,6 +35,7 @@ export class AuditService {
 
   async query(filters: {
     entity?: string;
+    entityId?: string;
     action?: AuditAction;
     actorId?: string;
     from?: Date;
@@ -44,6 +45,7 @@ export class AuditService {
     return this.prisma.auditLog.findMany({
       where: {
         entity: filters.entity,
+        entityId: filters.entityId,
         action: filters.action,
         actorId: filters.actorId,
         createdAt: {

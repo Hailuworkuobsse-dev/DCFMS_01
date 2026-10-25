@@ -22,8 +22,10 @@ export class SettlementService {
       data: {
         paymentNo, contractId: dto.contractId,
         payerId: dto.payerId, payeeId: dto.payeeId,
+        deliveredKg: dto.deliveredKg,
         grossAmount: dto.grossAmount, loanDeduction: deduction,
         netAmount, channel: dto.channel,
+        externalRef: dto.externalRef,
         status: PaymentStatus.PENDING,
       },
     });

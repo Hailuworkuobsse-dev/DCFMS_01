@@ -6,7 +6,6 @@ import {
   ChevronsUpDown,
   Search,
   Download,
-  Filter,
 } from 'lucide-react';
 import { LoadingState, EmptyState } from './States';
 import { downloadTextFile } from '../../lib/utils/format';

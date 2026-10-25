@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, AlertCircle, CheckCircle2, X } from 'lucide-react';
+import { AlertTriangle, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export interface ConfirmDialogProps {
   isOpen: boolean;

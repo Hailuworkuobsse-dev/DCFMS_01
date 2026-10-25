@@ -371,6 +371,8 @@ model Voucher {
   inputType    String        // SEED | FERTILIZER | ...
   amount       Float
   unit         String        @default("kg")
+  valueEtb     Float?
+  dealerOrgId  String?
   agroDealerId String?
   status       VoucherStatus @default(ISSUED)
   expiresAt    DateTime
@@ -388,6 +390,7 @@ model Payment {
   contract     Contract?     @relation(fields: [contractId], references: [id])
   payerId      String
   payeeId      String
+  deliveredKg  Float?
   grossAmount  Float
   loanDeduction Float        @default(0)
   netAmount    Float
@@ -430,6 +433,8 @@ model Grievance {
   id             String           @id @default(uuid())
   ticketNo       String           @unique
   category       GrievanceCategory
+  title          String?
+  severity       String?
   description    String
   raisedById     String
   raisedByFarmer Farmer?          @relation("grievance_raiser", fields: [raisedByFarmerId], references: [id])

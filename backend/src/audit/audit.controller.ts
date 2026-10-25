@@ -12,6 +12,7 @@ export class AuditController {
   @Get()
   async list(
     @Query('entity') entity?: string,
+    @Query('entityId') entityId?: string,
     @Query('action') action?: AuditAction,
     @Query('actorId') actorId?: string,
     @Query('from') from?: string,
@@ -19,7 +20,7 @@ export class AuditController {
     @Query('limit') limit?: string,
   ) {
     return this.audit.query({
-      entity, action, actorId,
+      entity, entityId, action, actorId,
       from: from ? new Date(from) : undefined,
       to: to ? new Date(to) : undefined,
       limit: limit ? Number(limit) : 100,

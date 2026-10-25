@@ -19,6 +19,9 @@ export class VouchersService {
       data: {
         voucherNo, farmerId: dto.farmerId, contractId: dto.contractId,
         inputType: dto.inputType, amount: dto.amount,
+        unit: dto.unit || 'kg',
+        valueEtb: dto.valueEtb,
+        dealerOrgId: dto.dealerOrgId,
         expiresAt: new Date(dto.expiresAt), status: VoucherStatus.ISSUED,
       },
     });

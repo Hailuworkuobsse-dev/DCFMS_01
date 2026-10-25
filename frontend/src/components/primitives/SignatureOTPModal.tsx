@@ -7,6 +7,8 @@ export interface SignatureOTPModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSign: (data: { otpCode: string; declarationAccepted: boolean }) => Promise<void>;
+  /** Requests a fresh OTP from the backend; resolves to the dev-intercepted code when available. */
+  onRequestOtp?: () => Promise<string | null>;
   contractTitle: string;
   contractNumber: string;
   title?: string;
@@ -17,6 +19,7 @@ export const SignatureOTPModal: React.FC<SignatureOTPModalProps> = ({
   isOpen,
   onClose,
   onSign,
+  onRequestOtp,
   contractTitle,
   contractNumber,
   title,
@@ -28,9 +31,28 @@ export const SignatureOTPModal: React.FC<SignatureOTPModalProps> = ({
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
   const activeScope = currentUser?.scopedRoles.find((scope) => scope.id === currentUser.activeScopeId);
 
   if (!isOpen) return null;
+
+  const handleSendOtp = async () => {
+    if (!onRequestOtp) return;
+    setError(null);
+    try {
+      setIsSendingOtp(true);
+      const code = await onRequestOtp();
+      if (code) {
+        setDevOtp(code);
+        setOtpCode(code);
+      }
+    } catch (err: any) {
+      setError(err?.message || t('signature.otpRequestFailed', 'Failed to request OTP code'));
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,9 +167,35 @@ export const SignatureOTPModal: React.FC<SignatureOTPModalProps> = ({
               placeholder="000000"
               className="w-full text-center tracking-widest text-lg font-mono py-2 bg-white border border-stone-300 focus:outline-none focus:border-stone-900 focus:ring-1 focus:ring-stone-900"
             />
-            <p className="text-[11px] text-stone-500">
-              {t('signature.otpSentNotice', 'Demo verification code: 123456')}
-            </p>
+            {onRequestOtp ? (
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] text-stone-500">
+                  {devOtp ? (
+                    <>
+                      {t('signature.smsIntercepted', 'SMS intercepted (dev)')}: <span className="font-mono font-bold text-forest-700">{devOtp}</span>
+                    </>
+                  ) : (
+                    t('signature.requestOtpNotice', 'Request your 6-digit verification code via SMS / USSD')
+                  )}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSendOtp}
+                  disabled={isSendingOtp}
+                  className="shrink-0 text-[11px] font-semibold border border-forest-700 text-forest-800 px-2 py-1 hover:bg-forest-50 disabled:opacity-50"
+                >
+                  {isSendingOtp
+                    ? t('signature.sending', 'Sending…')
+                    : devOtp
+                      ? t('signature.resendOtp', 'Resend OTP')
+                      : t('signature.sendOtp', 'Send OTP')}
+                </button>
+              </div>
+            ) : (
+              <p className="text-[11px] text-stone-500">
+                {t('signature.otpSentNotice', 'Demo verification code: 123456')}
+              </p>
+            )}
           </div>
 
           {/* Legal Checkbox */}

@@ -10,6 +10,8 @@ import { GrievancesModule } from './grievances/grievances.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { AuditModule } from './audit/audit.module';
+import { DirectoryModule } from './directory/directory.module';
+import { HealthController } from './health/health.controller';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
@@ -28,7 +30,9 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
     GrievancesModule,
     AnalyticsModule,
     MonitoringModule,
+    DirectoryModule,
   ],
+  controllers: [HealthController],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

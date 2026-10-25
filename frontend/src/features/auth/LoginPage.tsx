@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Shield, KeyRound, User, AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -33,10 +33,35 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
     { role: 'ProducerIndividual', label: 'Smallholder Farmer', email: 'alemu.farmer@ethio.et' },
   ];
 
-  const handleSelectPreset = (preset: typeof rolePresets[0]) => {
+  type Preset = { role: RoleId; label: string; email: string; password?: string };
+  const [presets, setPresets] = useState<Preset[]>(rolePresets);
+
+  // When the real backend integration is enabled, the BFF serves the seeded
+  // DCFMS accounts here so evaluators can log in against live data.
+  useEffect(() => {
+    if (!isDevelopment) return;
+    fetch('/api/auth/demo-accounts')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => {
+        const accs = Array.isArray(d?.accounts) ? d.accounts : [];
+        if (accs.length) {
+          setPresets(
+            accs.map((a: any) => ({
+              role: (a.primaryRole ?? 'FieldAgent') as RoleId,
+              label: a.orgName ? `${a.fullName} — ${a.orgName}` : String(a.fullName ?? a.email),
+              email: String(a.email ?? ''),
+              ...(a.password ? { password: String(a.password) } : {}),
+            }))
+          );
+        }
+      })
+      .catch(() => undefined);
+  }, [isDevelopment]);
+
+  const handleSelectPreset = (preset: Preset) => {
     if (!isDevelopment) return;
     setUsername(preset.email);
-    setPassword('ati2025!');
+    setPassword(preset.password ?? 'ati2025!');
     setError(null);
   };
 
@@ -97,11 +122,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {rolePresets.map((preset) => {
+              {presets.map((preset) => {
                 const isSelected = username === preset.email;
                 return (
                   <button
-                    key={preset.role}
+                    key={`${preset.role}-${preset.email}`}
                     type="button"
                     onClick={() => handleSelectPreset(preset)}
                     className={`text-left p-2.5 border transition-all text-xs ${

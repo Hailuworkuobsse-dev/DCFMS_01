@@ -75,7 +75,7 @@ export class ContractsController {
   }
 
   @Patch(':id/submit-approval')
-  @Roles(Role.CONTRACTOR, Role.COOPERATIVE)
+  @Roles(Role.CONTRACTOR, Role.COOPERATIVE, Role.MOA_OFFICER, Role.RBOA_OFFICER, Role.WBOA_OFFICER)
   submitForApproval(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.submitForApproval(id, user);
   }
