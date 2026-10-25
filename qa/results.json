@@ -1,0 +1,724 @@
+{
+  "run_at": "2026-10-25 19:11:05",
+  "counts": {
+    "PARTIAL": 16,
+    "NOT-IMPL": 37,
+    "PASS": 24,
+    "FAIL": 8,
+    "NOT-EXEC": 4
+  },
+  "results": [
+    {
+      "id": "UM-01",
+      "area": "A",
+      "title": "Farmer self-registration \u2013 valid data",
+      "status": "PARTIAL",
+      "evidence": "register \u2192 201 id=1823a88b\u2026; spec payload incl. faydaId+parcels \u2192 400 ([\"property faydaId should not exist\", \"property parcels should not exi)",
+      "notes": "Core registration works (201, unique phone, bcrypt hash). 'Pending Verification', Fayda linkage, Farmer-Registry mock and parcel capture are NOT implemented (code.md TODO(integration): Fayda)."
+    },
+    {
+      "id": "UM-02",
+      "area": "A",
+      "title": "Farmer registration \u2013 missing Fayda ID",
+      "status": "NOT-IMPL",
+      "evidence": "register without Fayda ID \u2192 201 (accepted; no faydaId field exists in RegisterDto)",
+      "notes": "No Fayda enforcement \u2014 declared TODO(integration) in code.md."
+    },
+    {
+      "id": "UM-03",
+      "area": "A",
+      "title": "Farmer registration \u2013 duplicate land parcel",
+      "status": "NOT-IMPL",
+      "evidence": "GET /parcels \u2192 404 (no parcel CRUD API); parcel-level double-contracting is enforced at contract creation (see CM-15)",
+      "notes": ""
+    },
+    {
+      "id": "UM-04",
+      "area": "A",
+      "title": "Contractor registration \u2013 missing trade license",
+      "status": "NOT-IMPL",
+      "evidence": "contractor registration without license \u2192 201 (licenseNo/tin not collected by /auth/register)",
+      "notes": "Contractor model stores licenseNo/tin/approvalStatus but no onboarding/validation API exists."
+    },
+    {
+      "id": "UM-05",
+      "area": "A",
+      "title": "Contractor multi-step approval \u2013 MoA path",
+      "status": "NOT-IMPL",
+      "evidence": "GET /contractor/dashboard \u2192 404; GET /contractors \u2192 404",
+      "notes": "No contractor approval workflow endpoints."
+    },
+    {
+      "id": "UM-06",
+      "area": "A",
+      "title": "Contractor approval \u2013 RBoA path",
+      "status": "NOT-IMPL",
+      "evidence": "same surface absent as UM-05",
+      "notes": ""
+    },
+    {
+      "id": "UM-07",
+      "area": "A",
+      "title": "RBAC \u2013 Farmer blocked from admin surfaces",
+      "status": "PARTIAL",
+      "evidence": "farmer GET /users \u2192 403 'Requires role: SYSTEM_ADMIN, MOA_OFFICER, RBOA_OFF'",
+      "notes": "403 enforced by RolesGuard \u2713. Unauthorized-attempt audit logging NOT implemented (AuditInterceptor records successful writes only)."
+    },
+    {
+      "id": "UM-08",
+      "area": "A",
+      "title": "Scope \u2013 WBoA sees only own woreda",
+      "status": "PASS",
+      "evidence": "wboa sees woredas=['Adama']; Bishoftu leak=False; RBoA(Oromia) sees both=True",
+      "notes": ""
+    },
+    {
+      "id": "UM-09",
+      "area": "A",
+      "title": "Role escalation attempt",
+      "status": "PASS",
+      "evidence": "PATCH /users/self \u2192 404; PATCH /users/:id \u2192 404; DB role still FARMER",
+      "notes": "Fail-safe: no self-service/role-update endpoints exist; escalation impossible via API."
+    },
+    {
+      "id": "UM-10",
+      "area": "A",
+      "title": "MFA enforced for admin",
+      "status": "NOT-IMPL",
+      "evidence": "admin login without MFA \u2192 201 (User.mfaEnabled column exists but is never enforced)",
+      "notes": ""
+    },
+    {
+      "id": "UM-11",
+      "area": "A",
+      "title": "Account lockout after 5 failed logins",
+      "status": "FAIL",
+      "evidence": "5 wrong passwords \u2192 [401, 401, 401, 401, 401]; 6th (correct) \u2192 201 \u2014 no lockout",
+      "notes": "FINDING[HIGH]: no brute-force protection. Recommend @nestjs/throttler + failed-attempt lockout."
+    },
+    {
+      "id": "UM-12",
+      "area": "A",
+      "title": "Profile update \u2013 phone change w/ OTP",
+      "status": "NOT-IMPL",
+      "evidence": "no profile-update endpoint (UM-09 probes)",
+      "notes": ""
+    },
+    {
+      "id": "UM-13",
+      "area": "A",
+      "title": "Parcel update triggers re-verification",
+      "status": "NOT-IMPL",
+      "evidence": "no parcel API (UM-03)",
+      "notes": ""
+    },
+    {
+      "id": "CM-01",
+      "area": "B",
+      "title": "Create contract \u2013 valid",
+      "status": "PASS",
+      "evidence": "201 status=DRAFT sha256=4befa97ead0d5bf3\u2026 auditRows=1 no=DCF-2026-000004",
+      "notes": ""
+    },
+    {
+      "id": "CM-02",
+      "area": "B",
+      "title": "Missing mandatory clause rejected",
+      "status": "NOT-IMPL",
+      "evidence": "contract with empty clause set \u2192 201 (content is free-form JSON, no Proclamation-1289 clause validation)",
+      "notes": "FINDING[MED]: mandatory-clause validation not implemented."
+    },
+    {
+      "id": "CM-03",
+      "area": "B",
+      "title": "Template customization & versioning",
+      "status": "NOT-IMPL",
+      "evidence": "GET /templates \u2192 404",
+      "notes": "templateId is free-form; no template CRUD."
+    },
+    {
+      "id": "CM-04",
+      "area": "B",
+      "title": "OTP e-signature \u2013 farmer signs",
+      "status": "PARTIAL",
+      "evidence": "devOtp=247529; sign \u2192 201; row: SIGNED|OTP|ip=::1|dev=Python-url|hash=9a194a6179",
+      "notes": "Timestamp/IP/device/hash recorded \u2713. Gaps: SMS gateway stubbed (devOtp channel), Fayda ID not stored on signature."
+    },
+    {
+      "id": "CM-05",
+      "area": "B",
+      "title": "E-signature \u2013 invalid OTP rejected \u00d73",
+      "status": "PARTIAL",
+      "evidence": "3\u00d7 wrong OTP \u2192 [400, 400, 400]; contract still PENDING_SIGNATURES; 4th attempt NOT locked out",
+      "notes": "Rejection works (HTTP 400 vs spec 401). FINDING[MED]: no attempt counter/lockout after 3 failures."
+    },
+    {
+      "id": "CM-06",
+      "area": "B",
+      "title": "E-signature \u2013 expired OTP",
+      "status": "PASS",
+      "evidence": "expired OTP \u2192 400 'OTP expired or missing' (spec: 401)",
+      "notes": "TTL enforced via OtpCode.expiresAt."
+    },
+    {
+      "id": "CM-07",
+      "area": "B",
+      "title": "Approval workflow \u2013 WBoA approves",
+      "status": "PASS",
+      "evidence": "bothSigned=True \u2192 approve=APPROVED approvedBy set=True audit=1",
+      "notes": "Party notifications NOT implemented (no notification service)."
+    },
+    {
+      "id": "CM-08",
+      "area": "B",
+      "title": "Approval \u2013 unauthorized role",
+      "status": "PARTIAL",
+      "evidence": "farmer approve \u2192 403 'Requires role: MOA_OFFICER, RBOA_OFFICER, WBO'",
+      "notes": "403 \u2713; denials not audited (see UM-07)."
+    },
+    {
+      "id": "CM-09",
+      "area": "B",
+      "title": "Lifecycle \u2013 invalid transitions rejected",
+      "status": "PASS",
+      "evidence": "on APPROVED: send-for-signature=400('Only DRAFT contracts can be sent') re-approve=400 re-submit=400",
+      "notes": "No endpoint can set arbitrary statuses; LifecycleService + per-action guards hold."
+    },
+    {
+      "id": "CM-10",
+      "area": "B",
+      "title": "Version control on contract edit",
+      "status": "NOT-IMPL",
+      "evidence": "PUT \u2192 404, PATCH \u2192 404 (no update endpoints; versions snapshot at creation only)",
+      "notes": "FINDING[MED]: no amendment/versioning API (code.md next-steps #2)."
+    },
+    {
+      "id": "CM-11",
+      "area": "B",
+      "title": "Tamper-proof verification",
+      "status": "PASS",
+      "evidence": "after direct DB mutation \u2192 intact=False stored=4befa97ead0d\u2026 recomputed=94c09080b629\u2026",
+      "notes": "Canonical-JSON SHA-256 detects mutation \u2713. Automatic audit alert on mismatch NOT implemented."
+    },
+    {
+      "id": "CM-12",
+      "area": "B",
+      "title": "Document upload (PDF \u226410MB)",
+      "status": "NOT-IMPL",
+      "evidence": "POST /contracts/:id/documents \u2192 404",
+      "notes": "No document storage/scan pipeline."
+    },
+    {
+      "id": "CM-13",
+      "area": "B",
+      "title": "Malware upload rejection (EICAR)",
+      "status": "NOT-IMPL",
+      "evidence": "no upload surface",
+      "notes": ""
+    },
+    {
+      "id": "CM-14",
+      "area": "B",
+      "title": "Signing notifications (SMS + in-app)",
+      "status": "NOT-IMPL",
+      "evidence": "OTP/voucher SMS = TODO(integration); BFF /api/notifications serves static mock",
+      "notes": ""
+    },
+    {
+      "id": "CM-15",
+      "area": "B",
+      "title": "Double-contracting prevention",
+      "status": "PASS",
+      "evidence": "parcelA locked=t; second contract on same parcel \u2192 400 'One or more parcels are already under contract' (spec: 409)",
+      "notes": "Lock is parcel-level (crop/season matching absent). NOTE: rejected attempt left orphan draft rows=1 \u2014 create() not wrapped in $transaction. FINDING[LOW]."
+    },
+    {
+      "id": "CM-16",
+      "area": "B",
+      "title": "Search/filter + RBAC on lists",
+      "status": "PARTIAL",
+      "evidence": "?status&commodity \u2192 1 rows, all matching=True; woreda scoping per UM-08",
+      "notes": "No pagination params (fixed take=200); no free-text search server-side."
+    },
+    {
+      "id": "CM-17",
+      "area": "B",
+      "title": "Bulk export (async CSV)",
+      "status": "NOT-IMPL",
+      "evidence": "POST /contracts/export \u2192 404",
+      "notes": ""
+    },
+    {
+      "id": "CM-18",
+      "area": "B",
+      "title": "Amendment workflow (ADJUSTED)",
+      "status": "NOT-IMPL",
+      "evidence": "no API path to IN_EXECUTION/ADJUSTED states",
+      "notes": ""
+    },
+    {
+      "id": "AF-01",
+      "area": "C",
+      "title": "Credit-data sharing requires consent",
+      "status": "NOT-IMPL",
+      "evidence": "GET /finance/credit-data/:id \u2192 404",
+      "notes": "No consent framework (code.md TODO)."
+    },
+    {
+      "id": "AF-02",
+      "area": "C",
+      "title": "Credit-data sharing with consent",
+      "status": "NOT-IMPL",
+      "evidence": "same surface absent",
+      "notes": ""
+    },
+    {
+      "id": "AF-03",
+      "area": "C",
+      "title": "Loan application \u2013 valid",
+      "status": "PASS",
+      "evidence": "\u2192 201 status=SUBMITTED no=LN-1792955452726 visible-to-CBE=True",
+      "notes": "Applicant notification NOT implemented."
+    },
+    {
+      "id": "AF-04",
+      "area": "C",
+      "title": "Loan limit vs contract value (\u226480%)",
+      "status": "FAIL",
+      "evidence": "99,999,999 ETB loan on 700k contract \u2192 201 (accepted)",
+      "notes": "FINDING[HIGH]: no exposure-limit validation in backend (mock BFF had it; backend mode bypasses)."
+    },
+    {
+      "id": "AF-05",
+      "area": "C",
+      "title": "Tripartite financing workflow",
+      "status": "PARTIAL",
+      "evidence": "FI approve \u2192 APPROVED=True; voucher NOT auto-generated on approval (manual issue verified in AF-06)",
+      "notes": ""
+    },
+    {
+      "id": "AF-06",
+      "area": "C",
+      "title": "Voucher redemption \u2013 valid",
+      "status": "PASS",
+      "evidence": "issue \u2192 201 VC-943CDA82; dealer redeem \u2192 201 status=REDEEMED redeemedAt=True",
+      "notes": "Farmer-OTP not verified server-side at redemption (dealer role-gate only). FINDING[LOW]."
+    },
+    {
+      "id": "AF-07",
+      "area": "C",
+      "title": "Voucher redemption \u2013 expired",
+      "status": "PASS",
+      "evidence": "redeem expired \u2192 400 'Voucher expired' status\u2192EXPIRED",
+      "notes": ""
+    },
+    {
+      "id": "AF-08",
+      "area": "C",
+      "title": "Voucher double redemption",
+      "status": "PASS",
+      "evidence": "second redeem \u2192 400 'Voucher not redeemable' (spec: 409 \u2014 behavior correct, code differs)",
+      "notes": ""
+    },
+    {
+      "id": "AF-09",
+      "area": "C",
+      "title": "Insurance policy creation",
+      "status": "NOT-IMPL",
+      "evidence": "POST /insurance/policy \u2192 404",
+      "notes": ""
+    },
+    {
+      "id": "AF-10",
+      "area": "C",
+      "title": "Settlement with loan deduction",
+      "status": "PASS",
+      "evidence": "175000\u221245000 \u2192 net 130000 status=COMPLETED no=PM-1792955452927; deduction>gross \u2192 400",
+      "notes": "Deduction is client-supplied (BFF computes from DISBURSED loans); gateway simulated (auto-COMPLETED); interest not deducted."
+    },
+    {
+      "id": "AF-11",
+      "area": "C",
+      "title": "Settlement failure path (insufficient funds)",
+      "status": "NOT-IMPL",
+      "evidence": "gateway simulation always succeeds; FAILED/REVERSED unreachable",
+      "notes": ""
+    },
+    {
+      "id": "AF-12",
+      "area": "C",
+      "title": "Reconciliation report",
+      "status": "NOT-IMPL",
+      "evidence": "GET /reports/settlements \u2192 404; raw GET /finance/settlements works",
+      "notes": ""
+    },
+    {
+      "id": "AF-13",
+      "area": "C",
+      "title": "FI API rate limiting",
+      "status": "FAIL",
+      "evidence": "60 rapid GETs in 0.3s \u2192 statuses [200], zero 429",
+      "notes": "FINDING[HIGH]: no throttling (@nestjs/throttler absent)."
+    },
+    {
+      "id": "SM-01",
+      "area": "D",
+      "title": "Input stock allocation",
+      "status": "NOT-IMPL",
+      "evidence": "POST /inputs/allocate \u2192 404",
+      "notes": "No inventory model."
+    },
+    {
+      "id": "SM-02",
+      "area": "D",
+      "title": "Redemption quantity mismatch",
+      "status": "NOT-IMPL",
+      "evidence": "redeem takes no quantity (fixed at issue)",
+      "notes": ""
+    },
+    {
+      "id": "SM-03",
+      "area": "D",
+      "title": "8028 advisory integration",
+      "status": "NOT-IMPL",
+      "evidence": "POST /advisory/ussd \u2192 404",
+      "notes": ""
+    },
+    {
+      "id": "SM-04",
+      "area": "D",
+      "title": "Field-agent monitoring report (GPS+photo)",
+      "status": "PASS",
+      "evidence": "\u2192 201 linked=True agent=True gps=(8.54,39.27) photo-in-findings=True",
+      "notes": "WBoA notification + offline sync queue (server side) not implemented."
+    },
+    {
+      "id": "SM-05",
+      "area": "D",
+      "title": "NMIS price feed",
+      "status": "NOT-IMPL",
+      "evidence": "GET /market/prices \u2192 404",
+      "notes": ""
+    },
+    {
+      "id": "SM-06",
+      "area": "D",
+      "title": "NMIS failure fallback",
+      "status": "NOT-IMPL",
+      "evidence": "no NMIS client exists",
+      "notes": ""
+    },
+    {
+      "id": "SM-07",
+      "area": "D",
+      "title": "Offline capture & auto-sync",
+      "status": "NOT-EXEC",
+      "evidence": "frontend syncQueue.ts (IndexedDB) exists; needs browser/mobile harness",
+      "notes": ""
+    },
+    {
+      "id": "SM-08",
+      "area": "D",
+      "title": "Offline OTP signing queue",
+      "status": "NOT-EXEC",
+      "evidence": "same; backend OTP TTL would reject stale codes (CM-06)",
+      "notes": ""
+    },
+    {
+      "id": "SM-09",
+      "area": "D",
+      "title": "GPS geofence validation",
+      "status": "NOT-IMPL",
+      "evidence": "out-of-woreda GPS report \u2192 201 (accepted; no geofence check / supervisor override)",
+      "notes": "FINDING[MED]: monitoring GPS not validated against assignment."
+    },
+    {
+      "id": "GD-01",
+      "area": "E",
+      "title": "Submit grievance \u2013 valid",
+      "status": "PASS",
+      "evidence": "\u2192 201 ticket=GR-1792955453293 status=OPEN sla=2026-11-01 audit CREATE logged",
+      "notes": "WBoA notification NOT implemented."
+    },
+    {
+      "id": "GD-02",
+      "area": "E",
+      "title": "Auto-escalation after SLA breach",
+      "status": "NOT-IMPL",
+      "evidence": "backdated 10d \u2192 status still OPEN (no scheduler/cron in backend)",
+      "notes": ""
+    },
+    {
+      "id": "GD-03",
+      "area": "E",
+      "title": "Grievance resolution + audit",
+      "status": "PARTIAL",
+      "evidence": "WBoA resolve \u2192 403 (role-restricted); ResolutionOfficer \u2192 200 status=RESOLVED note+resolvedAt stored, audit UPDATE logged",
+      "notes": "Design deviation: spec has WBoA resolving; implementation reserves it for RESOLUTION_OFFICER. Notifications absent."
+    },
+    {
+      "id": "GD-04",
+      "area": "E",
+      "title": "Escalation to court + doc package",
+      "status": "PARTIAL",
+      "evidence": "escalate \u2192 ESCALATED + audit ESCALATE; no COURT tier or document-package generation exists",
+      "notes": ""
+    },
+    {
+      "id": "GD-05",
+      "area": "E",
+      "title": "Cross-farmer grievance access",
+      "status": "FAIL",
+      "evidence": "farmer2 GET farmer1's grievance \u2192 200; farmer2 GET /grievances \u2192 2 rows (all grievances visible)",
+      "notes": "FINDING[HIGH-security]: backend grievance reads lack ownership scoping (BFF filters for the web UI, raw API does not)."
+    },
+    {
+      "id": "GD-06",
+      "area": "E",
+      "title": "SLA breach alerting",
+      "status": "NOT-IMPL",
+      "evidence": "slaDueAt stored but no alerting/flag output",
+      "notes": ""
+    },
+    {
+      "id": "AR-01",
+      "area": "F",
+      "title": "Role dashboard \u2013 MoA aggregates",
+      "status": "PARTIAL",
+      "evidence": "/analytics/dashboard(moa) \u2192 200 keys=['contractsByStatus', 'farmersReached', 'finance', 'grievancesByStatus']; role-specific route /dashboard/moa \u2192 404",
+      "notes": "Aggregates PII-free \u2713; role framing happens in BFF /api/dashboard (verified by integration suite)."
+    },
+    {
+      "id": "AR-02",
+      "area": "F",
+      "title": "Contractor sees only own data",
+      "status": "FAIL",
+      "evidence": "contractor-1's list contains contractor-2's contract: True",
+      "notes": "FINDING[HIGH]: contractor scoping filters by party-ROLE only, not identity (code.md TODO acknowledged)."
+    },
+    {
+      "id": "AR-03",
+      "area": "F",
+      "title": "Async report generation",
+      "status": "NOT-IMPL",
+      "evidence": "POST /reports/contract-performance \u2192 404",
+      "notes": ""
+    },
+    {
+      "id": "AR-04",
+      "area": "F",
+      "title": "Farmer-reach report",
+      "status": "NOT-IMPL",
+      "evidence": "farmersReached aggregate exists in analytics; no report/export",
+      "notes": ""
+    },
+    {
+      "id": "AR-05",
+      "area": "F",
+      "title": "Financial-access report",
+      "status": "NOT-IMPL",
+      "evidence": "finance totals aggregate only",
+      "notes": ""
+    },
+    {
+      "id": "AR-06",
+      "area": "F",
+      "title": "Compliance report",
+      "status": "NOT-IMPL",
+      "evidence": "no endpoint",
+      "notes": ""
+    },
+    {
+      "id": "AR-07",
+      "area": "F",
+      "title": "Large async report (202+job)",
+      "status": "NOT-IMPL",
+      "evidence": "no job queue (BullMQ = code.md next step)",
+      "notes": ""
+    },
+    {
+      "id": "AR-08",
+      "area": "F",
+      "title": "Analytics PII minimization",
+      "status": "PASS",
+      "evidence": "dashboard payload PII markers: none (counts/sums only)",
+      "notes": "/users (admin-only) exposes phone/email by design."
+    },
+    {
+      "id": "AR-09",
+      "area": "F",
+      "title": "Report access auditing",
+      "status": "NOT-IMPL",
+      "evidence": "no reports exist; AuditAction.EXPORT unused",
+      "notes": ""
+    },
+    {
+      "id": "XC-01",
+      "area": "G",
+      "title": "Audit log immutability",
+      "status": "PARTIAL",
+      "evidence": "PATCH /audit/:id \u2192 404; DELETE \u2192 404 (no mutation API); DB triggers on AuditLog = 0",
+      "notes": "Immutable by API-omission \u2713. FINDING[MED]: no DB-level protection (trigger/WORM/role separation)."
+    },
+    {
+      "id": "XC-02",
+      "area": "G",
+      "title": "Audit completeness (10 critical actions)",
+      "status": "PARTIAL",
+      "evidence": "distinct actions recorded this run: ['CREATE', 'UPDATE', 'LOGIN', 'APPROVE', 'SIGN', 'PAYOUT', 'ESCALATE']; sample: LOGIN Auth ip=::1 result=SUCCESS",
+      "notes": "Covered: LOGIN(outcome+IP+UA), CREATE, UPDATE, APPROVE, SIGN, PAYOUT, ESCALATE. Absent features \u2192 no entries: role/config change, export, DELETE; denials unlogged."
+    },
+    {
+      "id": "XC-03",
+      "area": "G",
+      "title": "SQL injection resistance",
+      "status": "PASS",
+      "evidence": "payload stored & filtered literally (1 row); injection login \u2192 401; table intact (11 rows) \u2014 Prisma parameterizes",
+      "notes": ""
+    },
+    {
+      "id": "XC-04",
+      "area": "G",
+      "title": "XSS handling",
+      "status": "PARTIAL",
+      "evidence": "stored/returned as inert JSON string; content-type=None; nosniff=None",
+      "notes": "React escapes at render (unit-tested). NOTE[LOW]: BFF lacks helmet headers."
+    },
+    {
+      "id": "XC-05",
+      "area": "G",
+      "title": "Login rate limiting",
+      "status": "FAIL",
+      "evidence": "40 logins in 0.1s \u2192 statuses [401]; no 429",
+      "notes": "FINDING[HIGH]: see UM-11/AF-13."
+    },
+    {
+      "id": "XC-06",
+      "area": "G",
+      "title": "JWT expiry & signature enforcement",
+      "status": "PASS",
+      "evidence": "forged expired \u2192 401; tampered signature \u2192 401",
+      "notes": ""
+    },
+    {
+      "id": "XC-07",
+      "area": "G",
+      "title": "Session timeout",
+      "status": "PARTIAL",
+      "evidence": "JWT 8h enforced (XC-06); refresh rotation revokes prior token; BFF cookie 12h",
+      "notes": "No idle-timeout revocation of unexpired access tokens (stateless-JWT trade-off)."
+    },
+    {
+      "id": "XC-08",
+      "area": "G",
+      "title": "Upload path traversal",
+      "status": "NOT-IMPL",
+      "evidence": "no upload endpoints (CM-12)",
+      "notes": ""
+    },
+    {
+      "id": "XC-09",
+      "area": "G",
+      "title": "Encryption at rest (PII)",
+      "status": "FAIL",
+      "evidence": "phone='+251911000004' faydaFin='123456789012' stored plaintext; only passwords/OTP/refresh-tokens hashed",
+      "notes": "FINDING[HIGH-compliance]: no pgcrypto/column encryption for Fayda FIN, phone, financials."
+    },
+    {
+      "id": "XC-10",
+      "area": "G",
+      "title": "TLS/HSTS posture",
+      "status": "PARTIAL",
+      "evidence": "helmet HSTS present=False; plain HTTP in dev (TLS termination = deployment layer)",
+      "notes": ""
+    },
+    {
+      "id": "XC-11",
+      "area": "G",
+      "title": "RBAC matrix sweep (10 endpoints \u00d7 roles)",
+      "status": "PASS",
+      "evidence": "59 role\u00d7endpoint checks; violations: none",
+      "notes": "400/404 expectations = role gate passed, business rule rejected (probe IDs intentionally missing)."
+    },
+    {
+      "id": "XC-12",
+      "area": "G",
+      "title": "Offline sync conflict resolution",
+      "status": "NOT-IMPL",
+      "evidence": "no sync/conflict API; frontend queue is single-device",
+      "notes": ""
+    },
+    {
+      "id": "XC-13",
+      "area": "G",
+      "title": "Bilingual UI (am/en parity)",
+      "status": "PASS",
+      "evidence": "frontend `npm test`: translations.test.ts key-parity (en\u2194am) + permissions.test.ts + schemas.test.ts \u2014 run separately, see report",
+      "notes": ""
+    },
+    {
+      "id": "XC-14",
+      "area": "G",
+      "title": "WCAG 2.1 AA (axe-core)",
+      "status": "NOT-EXEC",
+      "evidence": "no browser harness in this environment",
+      "notes": "Recommend CI: playwright + @axe-core/playwright over key routes."
+    },
+    {
+      "id": "XC-15",
+      "area": "G",
+      "title": "Low-bandwidth (2G) load",
+      "status": "NOT-EXEC",
+      "evidence": "static analysis: main bundle \u2248979 KB (gzip \u2248270 KB) \u2014 exceeds 2G budget; needs code-splitting",
+      "notes": ""
+    },
+    {
+      "id": "XC-16",
+      "area": "G",
+      "title": "Backend-down graceful degradation",
+      "status": "PASS",
+      "evidence": "backend killed \u2192 BFF login 503 code=BACKEND_UNAVAILABLE; backend restarted healthy=True",
+      "notes": ""
+    },
+    {
+      "id": "XC-17",
+      "area": "G",
+      "title": "Payment idempotency",
+      "status": "FAIL",
+      "evidence": "same externalRef twice \u2192 PM-1792955458606 AND PM-1792955458622 (double payment risk)",
+      "notes": "FINDING[HIGH]: no idempotency key / unique constraint on externalRef."
+    },
+    {
+      "id": "XC-18",
+      "area": "G",
+      "title": "Retention & deletion",
+      "status": "PARTIAL",
+      "evidence": "DELETE /users/:id \u2192 404 (absent); deactivate \u2192 200 isActive=false; deactivated login \u2192 401",
+      "notes": "Soft-disable works \u2713. PII anonymization/erasure + retention policy NOT implemented."
+    },
+    {
+      "id": "H-FUZZ",
+      "area": "H",
+      "title": "Fuzz: malformed inputs never 5xx",
+      "status": "PASS",
+      "evidence": "84 malformed payloads \u2192 5xx count=0; all handled as 4xx",
+      "notes": ""
+    },
+    {
+      "id": "H-SM",
+      "area": "H",
+      "title": "State machine: invalid transitions rejected",
+      "status": "PASS",
+      "evidence": "DRAFT\u2192approve/submit/sign all 400; violations: none",
+      "notes": ""
+    },
+    {
+      "id": "H-LOAD",
+      "area": "H",
+      "title": "Mini-load smoke (20 concurrent logins, 60 reads)",
+      "status": "PASS",
+      "evidence": "logins ok=20/20 p95=3.10s (bcrypt-12, 10 workers); GET /contracts p50=6ms p95=17ms",
+      "notes": "Sandbox-scale only; ToR 1,000-user load test needs k6/Gatling in a real environment."
+    }
+  ]
+}

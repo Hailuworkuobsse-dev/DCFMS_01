@@ -3,8 +3,10 @@ import { AdminLevel } from '../enums';
 
 /**
  * Enforces administrative scope: a REGIONAL user can only touch entities
- * whose `region` matches theirs; WOREDA-level only their woreda; etc.
- * Relies on `req.params`/`req.body.region` and `req.user`.
+ * whose `region` matches theirs; a WOREDA user is additionally restricted
+ * to their own woreda. Region and woreda are compared field-by-field
+ * (a previous version compared the payload's `region` value against the
+ * user's `woreda`, wrongly blocking woreda officers — found by QA XC-11).
  */
 @Injectable()
 export class ScopeGuard implements CanActivate {
@@ -14,12 +16,23 @@ export class ScopeGuard implements CanActivate {
     if (!user) return false;
     if (user.adminLevel === AdminLevel.FEDERAL || !user.adminLevel) return true;
 
-    const target = req.body?.region || req.query?.region || req.params?.region;
-    if (target && user.adminLevel === AdminLevel.REGIONAL && target !== user.region) {
-      throw new ForbiddenException('Out of regional scope');
+    const pick = (field: string) =>
+      req.body?.[field] || req.query?.[field] || req.params?.[field];
+    const targetRegion = pick('region');
+    const targetWoreda = pick('woreda');
+
+    if (user.adminLevel === AdminLevel.REGIONAL || user.adminLevel === AdminLevel.ZONAL) {
+      if (targetRegion && user.region && targetRegion !== user.region) {
+        throw new ForbiddenException('Out of regional scope');
+      }
     }
-    if (target && user.adminLevel === AdminLevel.WOREDA && target !== user.woreda) {
-      throw new ForbiddenException('Out of woreda scope');
+    if (user.adminLevel === AdminLevel.WOREDA) {
+      if (targetRegion && user.region && targetRegion !== user.region) {
+        throw new ForbiddenException('Out of regional scope');
+      }
+      if (targetWoreda && user.woreda && targetWoreda !== user.woreda) {
+        throw new ForbiddenException('Out of woreda scope');
+      }
     }
     return true;
   }
