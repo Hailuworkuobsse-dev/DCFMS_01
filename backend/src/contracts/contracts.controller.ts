@@ -19,7 +19,7 @@ export class ContractsController {
   ) {}
 
   @Post()
-  @Roles(Role.CONTRACTOR, Role.COOPERATIVE, Role.MOA_OFFICER, Role.WBOA_OFFICER)
+  @Roles(Role.CONTRACTOR, Role.COOPERATIVE)
   create(@Body() dto: CreateContractDto, @CurrentUser() user: JwtUser) {
     return this.contracts.create(dto, user);
   }
@@ -47,7 +47,7 @@ export class ContractsController {
   }
 
   @Patch(':id/send-for-signature')
-  @Roles(Role.CONTRACTOR, Role.MOA_OFFICER, Role.WBOA_OFFICER)
+  @Roles(Role.CONTRACTOR, Role.COOPERATIVE)
   sendForSignature(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.sendForSignatures(id, user);
   }
@@ -78,7 +78,7 @@ export class ContractsController {
   }
 
   @Patch(':id/submit-approval')
-  @Roles(Role.CONTRACTOR, Role.COOPERATIVE, Role.MOA_OFFICER, Role.RBOA_OFFICER, Role.WBOA_OFFICER)
+  @Roles(Role.CONTRACTOR, Role.COOPERATIVE)
   submitForApproval(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.submitForApproval(id, user);
   }
