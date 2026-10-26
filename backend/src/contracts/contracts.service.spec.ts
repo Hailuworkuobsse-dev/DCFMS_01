@@ -176,6 +176,7 @@ describe('ContractsService access control', () => {
   });
 
   it('lists only approved templates and narrows by commodity', async () => {
+    prisma.contractor.findUnique.mockResolvedValue({ approvalStatus: 'APPROVED' });
     await service.listApprovedTemplates({ sub: 'contractor-owner', role: Role.CONTRACTOR }, 'Wheat');
     expect(prisma.contractTemplate.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { status: 'APPROVED', OR: [{ commodity: 'Wheat' }, { commodity: null }] },
