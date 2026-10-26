@@ -37,7 +37,7 @@ export class ContractsController {
   }
 
   @Get('review-queue')
-  @Roles(Role.MOA_OFFICER, Role.RBOA_OFFICER, Role.WBOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER)
+  @Roles(Role.MOA_OFFICER, Role.RBOA_OFFICER, Role.WBOA_OFFICER)
   reviewQueue(@CurrentUser() user: JwtUser) {
     return this.contracts.listReviewQueue(user).then((contracts) => ({ contracts }));
   }
