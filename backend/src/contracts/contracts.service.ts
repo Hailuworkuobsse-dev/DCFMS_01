@@ -64,6 +64,7 @@ export class ContractsService {
     }
 
     const farmerIds = [...new Set(dto.parties.map((p) => p.farmerId).filter((id): id is string => Boolean(id)))];
+    if (farmerIds.length !== dto.parties.length) throw new BadRequestException('Duplicate or missing producer parties are not allowed');
     if (!dto.parcelIds?.length) throw new BadRequestException('Select at least one registered, available parcel');
     if (new Set(dto.parcelIds).size !== dto.parcelIds.length) throw new BadRequestException('Duplicate parcel selections are not allowed');
     let contractRegion = dto.region;
