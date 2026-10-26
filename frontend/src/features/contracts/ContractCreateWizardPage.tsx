@@ -45,6 +45,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
         commodity: demand.commodity || current.commodity,
         quantityKg: Number(demand.estimatedVolumeQt || 0) * 100 || current.quantityKg,
         landAreaHectares: Number(demand.totalHectares || 0) || current.landAreaHectares,
+        region: demand.region || current.region,
         woreda: demand.woreda || current.woreda,
         kebele: demand.kebele || current.kebele,
         contractorOrgName: demand.buyerOrgName || current.contractorOrgName,
@@ -74,8 +75,6 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
     woreda: '',
     kebele: '',
     contractorOrgName: '',
-    contractorRepName: '',
-    contractorTin: '',
 
     // Step 3: Pricing & Escrow
     pricingModel: 'FLOOR_PLUS_MARKET_PREMIUM' as 'FIXED' | 'FLOOR_PLUS_MARKET_PREMIUM',
@@ -343,11 +342,11 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
           </div>
         )}
 
-        {/* STEP 2: Parties & Fayda ID */}
+        {/* STEP 2: Registered parties */}
         {currentStep === 2 && (
           <div className="space-y-4">
             <h3 className="text-base font-bold text-stone-900 border-b border-stone-200 pb-2">
-              Step 2: Legal Parties & Fayda National e-KYC Verification
+              Step 2: Registered Contract Parties
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
