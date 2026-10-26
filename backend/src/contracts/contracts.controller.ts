@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { ContractsService } from './contracts.service';
 import { SignatureService } from './signature.service';
-import { CreateContractDto, ApproveContractDto, SignContractDto } from './dto/create-contract.dto';
+import { CreateContractDto, ApproveContractDto, SignContractDto, SaveContractDraftDto, ContractCommentDto, ContractAnnexDto, AcceptContractChangeDto, ContractTemplateDto } from './dto/create-contract.dto';
 import { CurrentUser, JwtUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums';
@@ -36,9 +36,73 @@ export class ContractsController {
     return this.contracts.list(user, { status, commodity, region, woreda }).then((contracts) => ({ contracts }));
   }
 
+  @Get('templates')
+  listTemplates(@CurrentUser() user: JwtUser, @Query('commodity') commodity?: string) {
+    return this.contracts.listApprovedTemplates(user, commodity).then((templates) => ({ templates }));
+  }
+
+  @Post('templates')
+  @Roles(Role.SYSTEM_ADMIN)
+  createTemplate(@Body() dto: ContractTemplateDto, @CurrentUser() user: JwtUser) {
+    return this.contracts.createTemplate(dto, user);
+  }
+
+  @Patch('templates/:id/approve')
+  @Roles(Role.SYSTEM_ADMIN)
+  approveTemplate(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.approveTemplate(id, user);
+  }
+
+  @Get('party-lookup')
+  @Roles(Role.CONTRACTOR)
+  lookupParties(@Query('q') query: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.lookupContractParties(query || '', user).then((parties) => ({ parties }));
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.findOne(id, user);
+  }
+
+  @Patch(':id/draft')
+  @Roles(Role.CONTRACTOR)
+  saveDraft(@Param('id') id: string, @Body() dto: SaveContractDraftDto, @CurrentUser() user: JwtUser) {
+    return this.contracts.saveDraft(id, dto, user);
+  }
+
+  @Get(':id/comments')
+  comments(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.listComments(id, user).then((comments) => ({ comments }));
+  }
+
+  @Post(':id/comments')
+  addComment(@Param('id') id: string, @Body() dto: ContractCommentDto, @CurrentUser() user: JwtUser) {
+    return this.contracts.addComment(id, dto, user);
+  }
+
+  @Get(':id/annexes')
+  annexes(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.listAnnexes(id, user).then((annexes) => ({ annexes }));
+  }
+
+  @Post(':id/annexes')
+  addAnnex(@Param('id') id: string, @Body() dto: ContractAnnexDto, @CurrentUser() user: JwtUser) {
+    return this.contracts.addAnnex(id, dto, user);
+  }
+
+  @Get(':id/versions')
+  versions(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.compareVersions(id, user).then((versions) => ({ versions }));
+  }
+
+  @Get(':id/change-acceptances')
+  changeAcceptances(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.listChangeAcceptances(id, user).then((acceptances) => ({ acceptances }));
+  }
+
+  @Post(':id/change-acceptances')
+  acceptChange(@Param('id') id: string, @Body() dto: AcceptContractChangeDto, @CurrentUser() user: JwtUser) {
+    return this.contracts.acceptChange(id, dto, user);
   }
 
   @Get(':id/integrity')
