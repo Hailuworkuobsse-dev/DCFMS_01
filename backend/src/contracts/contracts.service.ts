@@ -311,6 +311,9 @@ export class ContractsService {
       where: { contractId: id },
       include: { farmer: true },
     });
+    if (parties.some((party) => !party.farmer?.userId)) {
+      throw new BadRequestException('Every producer party must have a registered farmer account before signing');
+    }
 
     return this.prisma.contract.update({
       where: { id },
@@ -319,7 +322,7 @@ export class ContractsService {
         signatures: {
           create: [
             ...parties.map((p) => ({
-              signerId: p.farmer?.userId as string,
+              signerId: p.farmer!.userId,
               role: p.role,
               status: SignatureStatus.PENDING,
             })),
