@@ -22,7 +22,7 @@ describe('ContractsService access control', () => {
       },
     }, {
       id: 'party-2', role: 'FARMER', farmerId: 'farmer-record-2',
-      farmer: { id: 'farmer-record-2', userId: 'farmer-two', user: { id: 'farmer-two', region: 'Oromia', woreda: 'Ada', kebele: 'Kebele 02' }, cooperative: { userId: 'cooperative-owner' } },
+      farmer: { id: 'farmer-record-2', userId: 'farmer-two', user: { id: 'farmer-two', region: 'Oromia', woreda: 'Ada', kebele: 'Kebele 02' }, cooperative: { userId: 'different-cooperative' } },
     }],
     signatures: [],
     versions: [],
@@ -103,6 +103,13 @@ describe('ContractsService access control', () => {
       .resolves.toMatchObject({ id: contract.id });
     await expect(service.findOne(contract.id, { sub: 'different-cooperative', role: Role.COOPERATIVE }))
       .rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('does not expose non-member payment records to a cooperative', async () => {
+    const result = await service.findOne(contract.id, { sub: 'cooperative-owner', role: Role.COOPERATIVE });
+    expect(result.loans.map((loan: any) => loan.id)).toEqual(['loan-own']);
+    expect(result.vouchers.map((voucher: any) => voucher.id)).toEqual(['voucher-own']);
+    expect(result.payments.map((payment: any) => payment.id)).toEqual(['payment-own']);
   });
 
   it.each([
