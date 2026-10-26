@@ -5,6 +5,8 @@ import { PrismaService } from '../common/prisma/prisma.service';
 @Injectable()
 export class OtpService {
   private readonly TTL = Number(process.env.OTP_TTL_SECONDS || 300);
+  private readonly MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 5);
+  private readonly RESEND_COOLDOWN = Number(process.env.OTP_RESEND_COOLDOWN_SECONDS || 30);
 
   constructor(private prisma: PrismaService) {}
 
@@ -14,6 +16,12 @@ export class OtpService {
       select: { phone: true, isActive: true },
     });
     if (!user?.isActive || !user.phone) throw new BadRequestException('An active account with a verified phone number is required');
+
+    const recent = await this.prisma.otpCode.findFirst({
+      where: { userId, purpose, createdAt: { gt: new Date(Date.now() - this.RESEND_COOLDOWN * 1000) } },
+      select: { id: true },
+    });
+    if (recent) throw new BadRequestException('Please wait before requesting another OTP');
 
     const code = String(randomInt(100000, 1000000));
     const codeHash = this.hash(code);
@@ -33,7 +41,15 @@ export class OtpService {
       orderBy: { createdAt: 'desc' },
     });
     if (!record) throw new BadRequestException('OTP expired or missing');
-    if (record.codeHash !== this.hash(code)) throw new BadRequestException('Invalid OTP');
+    if (record.codeHash !== this.hash(code)) {
+      const attempts = record.attempts + 1;
+      const update = await this.prisma.otpCode.updateMany({
+        where: { id: record.id, consumed: false, attempts: record.attempts },
+        data: { attempts: { increment: 1 }, consumed: attempts >= this.MAX_ATTEMPTS },
+      });
+      if (update.count !== 1) throw new BadRequestException('OTP has already been used or invalidated');
+      throw new BadRequestException(attempts >= this.MAX_ATTEMPTS ? 'Too many invalid OTP attempts. Request a new code.' : 'Invalid OTP');
+    }
 
     const consumed = await this.prisma.otpCode.updateMany({
       where: { id: record.id, consumed: false, expiresAt: { gt: new Date() } },
