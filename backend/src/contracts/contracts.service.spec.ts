@@ -189,7 +189,7 @@ describe('ContractsService access control', () => {
     await service.lookupContractParties('Abebe', { sub: 'contractor-owner', role: Role.CONTRACTOR });
     expect(prisma.farmer.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
-        user: expect.objectContaining({ isActive: true, role: Role.FARMER }),
+        user: { is: expect.objectContaining({ isActive: true, role: Role.FARMER }) },
         parcels: { some: { isLocked: false } },
       }),
     }));
