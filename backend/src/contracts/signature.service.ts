@@ -86,7 +86,37 @@ export class SignatureService {
       after: { signatureHash, contentHash, authorityBasis: authority.basis, signedAt: signedAt.toISOString() },
       ipAddress: meta.ip, userAgent: meta.userAgent,
     });
+    const updatedContract = await this.prisma.contract.findUnique({ where: { id: contractId }, select: { status: true } });
+    await this.recordSignatureEvent(contractId, signerId, sig.role, 'PARTY_SIGNED', `${sig.role} signatory completed OTP signing`, 'PENDING_SIGNATURES', updatedContract?.status || 'PENDING_SIGNATURES', { signatureHash, contentHash, signedAt: signedAt.toISOString() });
     return { status: 'SIGNED', signatureHash, contentHash, signedAt, authorityVerified: true };
+  }
+
+  private async recordSignatureEvent(
+    contractId: string, actorId: string, actorRole: string, eventType: string,
+    summary: string, fromStatus: string, toStatus: string, metadata: Record<string, any>,
+  ) {
+    const contract = await this.prisma.contract.findUnique({
+      where: { id: contractId },
+      include: { parties: { include: { farmer: { select: { userId: true } } } } },
+    });
+    if (!contract) return;
+    const previous = await this.prisma.contractEvent.findFirst({
+      where: { contractId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { eventHash: true, createdAt: true },
+    });
+    const createdAt = previous ? new Date(Math.max(Date.now(), new Date(previous.createdAt).getTime() + 1)) : new Date();
+    const payload = {
+      contractId, actorId, actorRole, eventType, fromStatus, toStatus, summary,
+      metadata, previousHash: previous?.eventHash || null, createdAt: createdAt.toISOString(),
+    };
+    const eventHash = createHash('sha256').update(canonicalJson(payload)).digest('hex');
+    await this.prisma.contractEvent.create({ data: { ...payload, createdAt, eventHash } });
+    const recipients = [...new Set([
+      contract.createdById, ...(contract.parties || []).map((party: any) => party.farmer?.userId).filter(Boolean),
+    ])].filter((userId) => userId !== actorId);
+    if (recipients.length) await this.prisma.contractNotification.createMany({
+      data: recipients.map((userId) => ({ userId, contractId, eventType, title: summary.slice(0, 180), message: summary })),
+    });
   }
 
   async listSignatureEvidence(contractId: string, actor: { sub: string; role: string; adminLevel?: string; region?: string; woreda?: string; kebele?: string }) {
