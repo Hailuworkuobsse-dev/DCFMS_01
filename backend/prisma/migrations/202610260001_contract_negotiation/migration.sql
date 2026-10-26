@@ -62,7 +62,7 @@ CREATE TABLE `ContractChangeAcceptance` (
   `version` INTEGER NOT NULL,
   `userId` VARCHAR(191) NOT NULL,
   `accepted` BOOLEAN NOT NULL,
-  `comment` VARCHAR(191) NULL,
+  `comment` TEXT NULL,
   `acceptedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE INDEX `ContractChangeAcceptance_contractId_version_userId_key` (`contractId`, `version`, `userId`),
   INDEX `ContractChangeAcceptance_userId_accepted_idx` (`userId`, `accepted`),
