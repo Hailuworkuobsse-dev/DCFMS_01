@@ -97,8 +97,10 @@ export class SignatureService {
     if (!contract) throw new BadRequestException('Contract not found');
     const isParty = contract.createdById === actor.sub ||
       contract.parties.some((p: any) => p.farmer?.userId === actor.sub);
-    const isScopedOfficer = ['WBOA_OFFICER', 'RBOA_OFFICER', 'MOA_OFFICER', 'MOTRI_OFFICER', 'ECC_OFFICER', 'EAA_OFFICER'].includes(actor.role) &&
-      (!actor.region || actor.region === contract.region) && (!actor.woreda || actor.woreda === contract.woreda);
+    const isScopedOfficer =
+      (actor.role === 'WBOA_OFFICER' && Boolean(actor.region && actor.woreda && actor.region === contract.region && actor.woreda === contract.woreda)) ||
+      (actor.role === 'RBOA_OFFICER' && Boolean(actor.region && actor.region === contract.region)) ||
+      (actor.role === 'MOA_OFFICER' && actor.adminLevel === 'FEDERAL');
     if (!isParty && !isScopedOfficer && actor.role !== 'SYSTEM_ADMIN' && actor.role !== 'AUDITOR') {
       throw new ForbiddenException('You are not authorized to view this contract evidence');
     }
