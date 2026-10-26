@@ -64,11 +64,16 @@ export class ContractsService {
     }
 
     const farmerIds = [...new Set(dto.parties.map((p) => p.farmerId).filter((id): id is string => Boolean(id)))];
+    if (!dto.parcelIds?.length) throw new BadRequestException('Select at least one registered, available parcel');
+    if (new Set(dto.parcelIds).size !== dto.parcelIds.length) throw new BadRequestException('Duplicate parcel selections are not allowed');
     let contractRegion = dto.region;
     let contractWoreda = dto.woreda;
     if (farmerIds.length) {
-      const existing = await this.prisma.farmer.findMany({ where: { id: { in: farmerIds } }, select: { id: true, user: { select: { region: true, woreda: true } } } });
+      const existing = await this.prisma.farmer.findMany({ where: { id: { in: farmerIds } }, select: { id: true, userId: true, user: { select: { role: true, isActive: true, region: true, woreda: true } } } });
       if (existing.length !== farmerIds.length) throw new BadRequestException('One or more producer records do not exist');
+      if (existing.some((farmer: any) => !farmer.userId || !farmer.user?.isActive || farmer.user?.role !== Role.FARMER)) {
+        throw new BadRequestException('Every selected producer must have an active registered farmer account');
+      }
       if (existing.some((farmer: any) => !farmer.user?.region || !farmer.user?.woreda)) {
         throw new BadRequestException('Every selected producer must have a registered region and woreda');
       }
@@ -84,17 +89,21 @@ export class ContractsService {
     }
     if (dto.parcelIds?.length) {
       const parcels = await this.prisma.parcel.findMany({
-        where: { id: { in: dto.parcelIds }, farmerId: { in: farmerIds } },
+        where: { id: { in: dto.parcelIds }, farmerId: { in: farmerIds }, isLocked: false },
         select: { id: true },
       });
       if (parcels.length !== new Set(dto.parcelIds).size) {
-        throw new ForbiddenException('Every parcel must belong to a selected producer');
+        throw new ForbiddenException('Every selected parcel must belong to a selected producer and remain available');
+      }
+      const parcelOwners = new Set(parcels.map((parcel: any) => parcel.farmerId));
+      if (farmerIds.some((farmerId) => !parcelOwners.has(farmerId))) {
+        throw new BadRequestException('Each selected producer must have at least one parcel in this contract');
       }
     }
 
     const contractNo = await this.nextContractNo();
     const contentHash = createHash('sha256').update(canonicalJson(dto.content)).digest('hex');
-    const contract = await this.prisma.contract.create({
+    const contract = await this.prisma.$transaction(async (tx: any) => {
       data: {
         contractNo, commodity: dto.commodity, quantity: dto.quantity,
         unit: dto.unit || 'quintal', quality: dto.quality,
@@ -108,16 +117,15 @@ export class ContractsService {
       },
       include: { parties: true, versions: true },
     });
-
-    if (dto.parcelIds?.length) {
-      const locked = await this.prisma.parcel.updateMany({
+      const locked = await tx.parcel.updateMany({
         where: { id: { in: dto.parcelIds }, farmerId: { in: farmerIds }, isLocked: false },
-        data: { isLocked: true, contractId: contract.id },
+        data: { isLocked: true, contractId: created.id },
       });
       if (locked.count !== new Set(dto.parcelIds).size) {
-        throw new BadRequestException('One or more parcels are already under contract');
+        throw new BadRequestException('One or more parcels are no longer available; reload the registry and retry');
       }
-    }
+      return created;
+    });
 
     await this.audit.log({
       actorId: actor.sub, action: AuditAction.CREATE,
