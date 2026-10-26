@@ -163,7 +163,7 @@ export class ContractsService {
 
   private applyActorScope(where: Prisma.ContractWhereInput, actor: JwtUser) {
     if (actor.role === Role.SYSTEM_ADMIN || actor.role === Role.AUDITOR) return;
-    if (actor.adminLevel === AdminLevel.FEDERAL && [Role.MOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER].some((role) => role === actor.role)) return;
+    if (actor.adminLevel === AdminLevel.FEDERAL && [Role.MOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER, Role.RESOLUTION_OFFICER].some((role) => role === actor.role)) return;
     if (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.REGIONAL) {
       if (!actor.region) { where.id = '__no_scope__'; return; }
       where.region = actor.region;
