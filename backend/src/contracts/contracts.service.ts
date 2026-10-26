@@ -916,16 +916,72 @@ export class ContractsService {
 
   async verifyIntegrity(id: string, actor: JwtUser) {
     await this.findOne(id, actor);
-    const contract = await this.prisma.contract.findUnique({ where: { id } });
+    const [contract, versions, annexes, events] = await Promise.all([
+      this.prisma.contract.findUnique({ where: { id } }),
+      this.prisma.contractVersion.findMany({ where: { contractId: id }, orderBy: { version: 'asc' } }),
+      this.prisma.contractAnnex.findMany({ where: { contractId: id }, orderBy: { createdAt: 'asc' } }),
+      this.prisma.contractEvent.findMany({ where: { contractId: id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }),
+    ]);
     if (!contract) throw new NotFoundException();
-    const recomputed = createHash('sha256')
-      .update(canonicalJson(contract.content))
-      .digest('hex');
+    const recomputed = createHash('sha256').update(canonicalJson(contract.content)).digest('hex');
+    const versionResults = versions.map((version: any, index: number) => {
+      const computed = createHash('sha256').update(canonicalJson(version.content)).digest('hex');
+      const previous = index > 0 ? versions[index - 1] : null;
+      return {
+        version: version.version, storedHash: version.hash, recomputedHash: computed,
+        contentIntact: version.hash === computed,
+        previousHashIntact: !version.previousHash || !previous || version.previousHash === previous.hash,
+      };
+    });
+    const latestVersion = versions.length ? versions[versions.length - 1] : null;
+    const latestMatchesContract = !latestVersion || (latestVersion.hash === contract.contentHash && canonicalJson(latestVersion.content) === canonicalJson(contract.content));
+    const annexResults = annexes.map((annex: any) => {
+      const computed = createHash('sha256').update(canonicalJson({
+        title: annex.title, description: annex.description || null, content: annex.content || null,
+        fileName: annex.fileName || null, storageUrl: annex.storageUrl || null,
+      })).digest('hex');
+      return { annexId: annex.id, intact: !annex.checksum || annex.checksum === computed, storedChecksum: annex.checksum, recomputedChecksum: computed };
+    });
+    let previousEventHash: string | null = null;
+    const eventResults = events.map((event: any) => {
+      const payload = {
+        contractId: event.contractId, actorId: event.actorId || null, actorRole: event.actorRole || null,
+        eventType: event.eventType, fromStatus: event.fromStatus || null, toStatus: event.toStatus || null,
+        summary: event.summary, metadata: event.metadata || null, previousHash: event.previousHash || null,
+        createdAt: new Date(event.createdAt).toISOString(),
+      };
+      const computed = createHash('sha256').update(canonicalJson(payload)).digest('hex');
+      const previousLinkIntact = (event.previousHash || null) === previousEventHash;
+      previousEventHash = event.eventHash;
+      return { eventId: event.id, intact: event.eventHash === computed && previousLinkIntact, storedHash: event.eventHash, recomputedHash: computed, previousLinkIntact };
+    });
+    const versionIntegrity = versionResults.every((v: any) => v.contentIntact && v.previousHashIntact);
+    const annexIntegrity = annexResults.every((a: any) => a.intact);
+    const eventIntegrity = eventResults.every((e: any) => e.intact);
+    const currentContentIntact = contract.contentHash === recomputed;
     return {
-      stored: contract.contentHash,
-      recomputed,
-      intact: contract.contentHash === recomputed,
+      contractId: id, checkedAt: new Date().toISOString(),
+      storedContentHash: contract.contentHash, recomputedContentHash: recomputed,
+      currentContentIntact, latestVersionMatchesContract: latestMatchesContract,
+      versionIntegrity, versions: versionResults,
+      annexIntegrity, annexes: annexResults,
+      eventLedgerIntegrity: eventIntegrity, events: eventResults,
+      intact: currentContentIntact && latestMatchesContract && versionIntegrity && annexIntegrity && eventIntegrity,
     };
+  }
+
+  async startExecution(id: string, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) throw new ForbiddenException('Only the contract creator may start execution');
+    if (contract.status !== 'APPROVED' || !this.lifecycle.canTransition(contract.status, 'IN_EXECUTION')) {
+      throw new BadRequestException('Only a statutorily approved contract can enter execution');
+    }
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; execution is blocked');
+    const updated = await this.prisma.contract.update({ where: { id, status: 'APPROVED' }, data: { status: 'IN_EXECUTION' } });
+    await this.recordLifecycleEvent(id, actor, 'EXECUTION_STARTED', 'Contract execution started after statutory approval', 'APPROVED', 'IN_EXECUTION');
+    await this.audit.log({ actorId: actor.sub, action: AuditAction.UPDATE, entity: 'Contract', entityId: id, before: { status: 'APPROVED' }, after: { status: 'IN_EXECUTION' } });
+    return updated;
   }
 
   private async nextContractNo(): Promise<string> {
