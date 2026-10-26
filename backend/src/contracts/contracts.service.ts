@@ -910,7 +910,6 @@ export class ContractsService {
     if (incomplete.length) throw new BadRequestException(`Cannot close contract: ${incomplete.length} required milestone(s) remain incomplete`);
     const integrity = await this.verifyIntegrity(id, actor);
     if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; closure is blocked');
-    const latestHash = Math.max(0, ...(contract.versions || []).map((v: any) => Number(v.version)));
     const finalContentHash = contract.contentHash || '';
     const result = await this.prisma.$transaction(async (tx: any) => {
       const updatedContract = await tx.contract.update({ where: { id, status: 'IN_EXECUTION' }, data: { status: 'COMPLETED' } });
