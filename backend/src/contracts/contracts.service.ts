@@ -157,6 +157,7 @@ export class ContractsService {
     });
     // Return 404 for both missing and unauthorized records to avoid ID enumeration.
     if (!contract || !(await this.canReadContract(contract, actor))) throw new NotFoundException('Contract not found');
+    this.filterRelatedRecords(contract, actor);
     return contract;
   }
 
@@ -206,6 +207,48 @@ export class ContractsService {
       default:
         // No relationship model exists for these roles yet. Deny by default.
         where.id = '__no_scope__';
+    }
+  }
+
+  /**
+   * A contract may cover multiple producers. Access to the shared agreement
+   * does not grant access to another producer's individual finance/input records.
+   */
+  private filterRelatedRecords(contract: any, actor: JwtUser): void {
+    if (actor.role === Role.SYSTEM_ADMIN || actor.role === Role.AUDITOR ||
+      (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.FEDERAL)) return;
+
+    if (actor.role === Role.FARMER) {
+      const farmerIds = new Set((contract.parties || [])
+        .filter((party: any) => party.farmer?.userId === actor.sub)
+        .map((party: any) => party.farmerId));
+      contract.loans = (contract.loans || []).filter((loan: any) => farmerIds.has(loan.farmerId));
+      contract.vouchers = (contract.vouchers || []).filter((voucher: any) => farmerIds.has(voucher.farmerId));
+      contract.payments = (contract.payments || []).filter((payment: any) =>
+        payment.payerId === actor.sub || payment.payeeId === actor.sub);
+      return;
+    }
+
+    if (actor.role === Role.COOPERATIVE) {
+      const memberIds = new Set((contract.parties || [])
+        .filter((party: any) => party.farmer?.cooperative?.userId === actor.sub)
+        .map((party: any) => party.farmerId));
+      contract.loans = (contract.loans || []).filter((loan: any) => memberIds.has(loan.farmerId));
+      contract.vouchers = (contract.vouchers || []).filter((voucher: any) => memberIds.has(voucher.farmerId));
+      return;
+    }
+
+    if (actor.role === Role.FI_OFFICER) {
+      contract.loans = (contract.loans || []).filter((loan: any) => loan.fiId === actor.sub);
+      contract.payments = [];
+      contract.vouchers = [];
+      return;
+    }
+
+    if (actor.role === Role.AGRO_DEALER) {
+      contract.vouchers = (contract.vouchers || []).filter((voucher: any) => voucher.agroDealerId === actor.sub);
+      contract.loans = [];
+      contract.payments = [];
     }
   }
 
