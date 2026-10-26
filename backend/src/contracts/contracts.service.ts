@@ -223,7 +223,7 @@ export class ContractsService {
     if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) {
       throw new ForbiddenException('Only the authenticated contract creator may edit this draft');
     }
-    if (contract.status !== 'DRAFT') throw new BadRequestException('Only draft contracts can be edited during negotiation');
+    if (!['DRAFT', 'RETURNED_FOR_CORRECTION'].includes(contract.status)) throw new BadRequestException('Only draft or returned-for-correction contracts can be edited');
     return contract;
   }
 
@@ -273,8 +273,8 @@ export class ContractsService {
     const nextVersion = latestVersion + 1;
     const result = await this.prisma.$transaction(async (tx: any) => {
       const updated = await tx.contract.update({
-        where: { id, status: 'DRAFT', updatedAt: contract.updatedAt },
-        data: { content: dto.content, contentHash: hash },
+        where: { id, status: contract.status, updatedAt: contract.updatedAt },
+        data: { status: 'DRAFT', content: dto.content, contentHash: hash },
       });
       const version = await tx.contractVersion.create({
         data: { contractId: id, version: nextVersion, content: dto.content, hash, createdById: actor.sub },
