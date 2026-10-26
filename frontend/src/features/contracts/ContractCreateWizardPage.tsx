@@ -31,7 +31,8 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
   const [templateId, setTemplateId] = useState('');
   const [partyQuery, setPartyQuery] = useState('');
   const [partyResults, setPartyResults] = useState<any[]>([]);
-  const [selectedProducer, setSelectedProducer] = useState<any | null>(null);
+  const [selectedProducers, setSelectedProducers] = useState<any[]>([]);
+  const [selectedParcelIds, setSelectedParcelIds] = useState<string[]>([]);
   const [isSearchingParties, setIsSearchingParties] = useState(false);
 
   useEffect(() => {
@@ -135,8 +136,8 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
       }
     }
     if (step === 2) {
-      if (!formData.farmerRecordId.trim()) {
-        setError(t('wizard.invalidParties', 'Enter the registered producer record ID. Do not enter a name or national ID as a substitute.'));
+      if (selectedProducers.length === 0 || selectedParcelIds.length === 0) {
+        setError(t('wizard.invalidParties', 'Select at least one verified producer and one available parcel.'));
         return false;
       }
     }
@@ -203,7 +204,8 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
           proclamationAccepted: formData.proclamationAccepted,
           linkageId: linkedDemand?.id ?? null,
         },
-        parties: [{ role: 'FARMER', farmerId: formData.farmerRecordId.trim() }],
+        parties: selectedProducers.map((producer) => ({ role: 'FARMER', farmerId: producer.id })),
+        parcelIds: selectedParcelIds,
       };
 
       const res = await api.contracts.create(payload);
@@ -414,19 +416,42 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
                   <div className="mt-2 divide-y border border-stone-200 rounded-lg">
                     {partyResults.map((party) => (
                       <button key={party.id} type="button" onClick={() => {
-                        setSelectedProducer(party);
-                        setFormData((current) => ({ ...current, farmerRecordId: party.id, region: party.user.region || '', woreda: party.user.woreda || '', kebele: party.user.kebele || '' }));
+                        if (selectedProducers.some((selected) => selected.id === party.id)) return;
+                        if (selectedProducers.length && (selectedProducers[0].user.region !== party.user.region || selectedProducers[0].user.woreda !== party.user.woreda)) {
+                          setError('A single contract cannot combine producers from different regions or woredas.');
+                          return;
+                        }
+                        setSelectedProducers((current) => [...current, party]);
+                        setFormData((current) => ({ ...current, farmerRecordId: current.farmerRecordId || party.id, region: party.user.region || '', woreda: party.user.woreda || '', kebele: party.user.kebele || '' }));
                         setPartyResults([]);
-                      }} className="block w-full p-3 text-left hover:bg-stone-50">
+                      }} disabled={selectedProducers.some((selected) => selected.id === party.id)} className="block w-full p-3 text-left hover:bg-stone-50 disabled:opacity-50">
                         <span className="block text-xs font-semibold text-stone-900">{party.user.fullName}</span>
                         <span className="block mt-1 text-xs text-stone-600">{party.user.region} · {party.user.woreda} · {party.user.kebele || 'Kebele not recorded'}</span>
                         <span className="block mt-1 text-[11px] text-stone-500">{party.parcels.length} available parcel(s) · {party.parcels.reduce((sum: number, parcel: any) => sum + Number(parcel.sizeHa || 0), 0).toFixed(2)} ha available</span>
+                        <span className="mt-1 block text-[11px] font-semibold text-forest-800">{selectedProducers.some((selected) => selected.id === party.id) ? 'Already selected' : 'Add producer and choose parcels'}</span>
                       </button>
                     ))}
                   </div>
                 )}
-                {selectedProducer && <div className="mt-3 rounded border border-forest-200 bg-forest-50 p-3 text-xs text-forest-900" role="status"><strong>Selected verified producer:</strong> {selectedProducer.user.fullName} · Record {selectedProducer.id} <button type="button" className="ml-2 underline" onClick={() => { setSelectedProducer(null); setFormData((current) => ({ ...current, farmerRecordId: '', region: '', woreda: '', kebele: '' })); }}>Change</button></div>}
-                <p className="mt-1 text-xs text-stone-500">The backend only returns active registered producers with available parcels. The selected registry record ID—not the search text—is submitted.</p>
+                {selectedProducers.length > 0 && <div className="mt-3 space-y-3" role="status">
+                  <p className="text-xs font-semibold text-stone-900">Selected registered producers ({selectedProducers.length})</p>
+                  {selectedProducers.map((producer) => <div key={producer.id} className="rounded border border-forest-200 bg-forest-50 p-3">
+                    <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold text-forest-900">{producer.user.fullName}</p><p className="mt-1 text-[11px] text-forest-800">Record {producer.id} · {producer.user.region} · {producer.user.woreda}</p></div>
+                    <button type="button" className="text-xs underline" onClick={() => {
+                      setSelectedProducers((current) => current.filter((item) => item.id !== producer.id));
+                      setSelectedParcelIds((current) => current.filter((parcelId) => !producer.parcels.some((parcel: any) => parcel.id === parcelId)));
+                      setFormData((current) => ({ ...current, farmerRecordId: selectedProducers.filter((item) => item.id !== producer.id)[0]?.id || '', region: selectedProducers.filter((item) => item.id !== producer.id)[0]?.user.region || '', woreda: selectedProducers.filter((item) => item.id !== producer.id)[0]?.user.woreda || '', kebele: selectedProducers.filter((item) => item.id !== producer.id)[0]?.user.kebele || '' }));
+                    }}>Remove</button></div>
+                    <p className="mt-3 text-[11px] font-semibold text-stone-700">Choose parcel(s) for this agreement</p>
+                    <div className="mt-2 space-y-2">{producer.parcels.map((parcel: any) => <label key={parcel.id} className="flex items-start gap-2 text-xs text-stone-700">
+                      <input type="checkbox" checked={selectedParcelIds.includes(parcel.id)} onChange={(event) => {
+                        setSelectedParcelIds((current) => event.target.checked ? [...current, parcel.id] : current.filter((id) => id !== parcel.id));
+                      }} />
+                      <span>{parcel.name} · {parcel.sizeHa} ha{parcel.crop ? ` · ${parcel.crop}` : ''}{parcel.season ? ` · ${parcel.season}` : ''}</span>
+                    </label>)}</div>
+                  </div>)}
+                </div>}
+                <p className="mt-1 text-xs text-stone-500">Only active registered producers with available parcels are returned. Every selected producer and parcel is revalidated by the backend before the draft is created.</p>
               </div>
 
               <div>
@@ -550,7 +575,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
                 </div>
                 <div className="flex justify-between">
                   <span className="text-stone-500">Producer:</span>
-                  <span className="font-semibold text-stone-900">{selectedProducer ? `${selectedProducer.user.fullName} · ${formData.farmerRecordId}` : 'Producer not selected'}</span>
+                  <span className="font-semibold text-stone-900">{selectedProducers.length ? selectedProducers.map((producer) => producer.user.fullName).join(', ') : 'Producer not selected'}</span>
                 </div>
               </div>
 
