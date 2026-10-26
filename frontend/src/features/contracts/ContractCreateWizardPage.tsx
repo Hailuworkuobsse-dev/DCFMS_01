@@ -90,12 +90,12 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
   // Form State
   const [formData, setFormData] = useState({
     // Step 1: Commodity
-    commodity: 'Durum Wheat',
-    variety: 'Kingbird 2024 certified',
-    quantityKg: 20000, // 200 Quintals
-    landAreaHectares: 8.5,
-    maxMoisturePercent: 12.5,
-    minPurityPercent: 98.0,
+    commodity: '',
+    variety: '',
+    quantityKg: 0,
+    landAreaHectares: 0,
+    maxMoisturePercent: 0,
+    minPurityPercent: 0,
     deliveryStartDate: '',
     deliveryEndDate: '',
     deliveryLocation: '',
@@ -108,19 +108,20 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
     contractorOrgName: '',
 
     // Step 3: Pricing & Escrow
-    pricingModel: 'FLOOR_PLUS_MARKET_PREMIUM' as 'FIXED' | 'FLOOR_PLUS_MARKET_PREMIUM',
-    unitPriceEtb: 52, // 5,200 ETB per Qtl
-    floorPriceEtb: 48,
-    marketPremiumPercent: 5,
-    inputAdvanceValueEtb: 150000,
-    escrowBank: 'Commercial Bank of Ethiopia (CBE)',
+    pricingModel: 'FIXED' as 'FIXED' | 'FLOOR_PLUS_MARKET_PREMIUM',
+    unitPriceEtb: 0,
+    floorPriceEtb: 0,
+    marketPremiumPercent: 0,
+    inputAdvanceValueEtb: 0,
+    escrowBank: '',
 
     // Step 4: Legal
-    arbitrationForum: 'Woreda Agriculture Office Conciliation Panel',
+    arbitrationForum: '',
     forceMajeureNoticeDays: 7,
     proclamationAccepted: false,
   });
 
+  const selectedParcelArea = selectedProducers.reduce((sum, producer) => sum + producer.parcels.filter((parcel: any) => selectedParcelIds.includes(parcel.id)).reduce((parcelSum: number, parcel: any) => parcelSum + Number(parcel.sizeHa || 0), 0), 0);
   const totalValue = formData.quantityKg * formData.unitPriceEtb;
 
   const validateStep = (step: number): boolean => {
@@ -130,13 +131,13 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
         setError(t('wizard.templateRequired', 'Select an approved contract template before drafting.'));
         return false;
       }
-      if (!formData.commodity || formData.quantityKg <= 0 || formData.landAreaHectares <= 0) {
-        setError(t('wizard.invalidCommodity', 'Please specify valid commodity, quantity, and land area.'));
+      if (!formData.commodity || formData.quantityKg <= 0) {
+        setError(t('wizard.invalidCommodity', 'Please specify a commodity and a positive quantity.'));
         return false;
       }
     }
     if (step === 2) {
-      if (selectedProducers.length === 0 || selectedParcelIds.length === 0) {
+      if (selectedProducers.length === 0 || selectedParcelIds.length === 0 || selectedParcelArea <= 0) {
         setError(t('wizard.invalidParties', 'Select at least one verified producer and one available parcel.'));
         return false;
       }
@@ -184,7 +185,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
           templateTitle: templates.find((template) => template.id === templateId)?.title,
           clauses: templates.find((template) => template.id === templateId)?.clauses || [],
           variety: formData.variety,
-          landAreaHectares: Number(formData.landAreaHectares),
+          landAreaHectares: selectedParcelArea,
           qualitySpecs: {
             maxMoisturePercent: Number(formData.maxMoisturePercent),
             minPurityPercent: Number(formData.minPurityPercent),
@@ -314,6 +315,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
                   onChange={(e) => setFormData({ ...formData, commodity: e.target.value })}
                   className="w-full text-xs bg-white border border-stone-300 px-3 py-2 text-stone-800 focus:outline-none focus:border-stone-900"
                 >
+                  <option value="">Select commodity…</option>
                   <option value="Durum Wheat">Durum Wheat (ስንዴ)</option>
                   <option value="Malt Barley">Malt Barley (ገብስ)</option>
                   <option value="Sesame Seed">Sesame Seed (ሰሊጥ)</option>
