@@ -1,5 +1,5 @@
 import {
-  IsArray, IsNumber, IsObject, IsOptional, IsString,
+  IsArray, IsBoolean, IsNumber, IsObject, IsOptional, IsString,
 } from 'class-validator';
 
 export class CreateContractDto {
@@ -52,6 +52,14 @@ export class ContractAnnexDto {
 
 export class AcceptContractChangeDto {
   @IsNumber() version: number;
-  @IsNumber() accepted: boolean;
+  @IsBoolean() accepted: boolean;
   @IsOptional() @IsString() comment?: string;
+}
+
+export class ContractTemplateDto {
+  @IsString() title: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() commodity?: string;
+  @IsOptional() @IsString() language?: string;
+  @IsArray() clauses: Array<{ key: string; title: string; text: string; mandatory?: boolean; editable?: boolean }>;
 }
