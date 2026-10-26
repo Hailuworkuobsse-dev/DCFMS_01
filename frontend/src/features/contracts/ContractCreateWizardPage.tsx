@@ -122,7 +122,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
   });
 
   const selectedParcelArea = selectedProducers.reduce((sum, producer) => sum + producer.parcels.filter((parcel: any) => selectedParcelIds.includes(parcel.id)).reduce((parcelSum: number, parcel: any) => parcelSum + Number(parcel.sizeHa || 0), 0), 0);
-  const totalValue = formData.quantityKg * (formData.pricingModel === 'FIXED' ? formData.unitPriceEtb : formData.floorPriceEtb);
+  const totalValue = formData.quantityKg * formData.unitPriceEtb;
 
   const validateStep = (step: number): boolean => {
     setError(null);
@@ -147,8 +147,8 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
       }
     }
     if (step === 3) {
-      if (formData.pricingModel === 'FIXED' && formData.unitPriceEtb <= 0) {
-        setError(t('wizard.invalidPrice', 'Fixed unit purchase price must be greater than zero.'));
+      if (formData.unitPriceEtb <= 0) {
+        setError(t('wizard.invalidPrice', 'Reference unit purchase price must be greater than zero.'));
         return false;
       }
       if (formData.pricingModel === 'FLOOR_PLUS_MARKET_PREMIUM' && formData.floorPriceEtb <= 0) {
