@@ -15,7 +15,7 @@ export class OtpService {
       where: { id: userId },
       select: { phone: true, isActive: true },
     });
-    if (!user?.isActive || !user.phone) throw new BadRequestException('An active account with a verified phone number is required');
+    if (!user?.isActive || !user.phone) throw new BadRequestException('An active account with a registered phone number is required');
 
     const recent = await this.prisma.otpCode.findFirst({
       where: { userId, purpose, createdAt: { gt: new Date(Date.now() - this.RESEND_COOLDOWN * 1000) } },
