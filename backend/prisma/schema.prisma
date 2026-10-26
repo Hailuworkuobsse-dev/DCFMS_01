@@ -171,6 +171,7 @@ model OtpCode {
   purpose   String   @default("SIGN")
   expiresAt DateTime
   consumed  Boolean  @default(false)
+  attempts  Int      @default(0)
   createdAt DateTime @default(now())
 
   @@index([userId, purpose])
