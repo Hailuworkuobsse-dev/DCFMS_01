@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { ContractsService } from './contracts.service';
+import { createHash } from 'crypto';
+import { ContractsService, canonicalJson } from './contracts.service';
 import { AdminLevel, Role } from '../common/enums';
 
 describe('ContractsService access control', () => {
@@ -293,6 +294,9 @@ describe('ContractsService access control', () => {
       { signerId: 'farmer-two', role: 'FARMER', status: 'PENDING' },
       { signerId: 'contractor-owner', role: 'CONTRACTOR', status: 'PENDING' },
     ]);
+    expect(prisma.contractEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventType: 'SIGNATURES_REQUESTED', fromStatus: 'DRAFT', toStatus: 'PENDING_SIGNATURES' }),
+    }));
   });
 
   it('does not allow an unrelated contractor to submit another party contract for signature', async () => {
@@ -364,5 +368,39 @@ describe('ContractsService access control', () => {
         toStatus: 'RETURNED_FOR_CORRECTION', scopeRegion: 'Oromia', scopeWoreda: 'Ada',
       }),
     }));
+  });
+
+  it('returns only the authenticated user notifications', async () => {
+    await service.listNotifications({ sub: 'farmer-owner', role: Role.FARMER }, true);
+    expect(prisma.contractNotification.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: 'farmer-owner', readAt: null },
+    }));
+  });
+
+  it('creates a real milestone and appends a lifecycle event', async () => {
+    prisma.contract.findUnique.mockResolvedValue({ ...contract, status: 'IN_EXECUTION' });
+    await service.createMilestone(contract.id, { title: 'Deliver inputs', dueAt: '2026-11-01T00:00:00.000Z' }, {
+      sub: 'contractor-owner', role: Role.CONTRACTOR,
+    });
+    expect(prisma.contractMilestone.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ contractId: contract.id, title: 'Deliver inputs', required: true }),
+    }));
+    expect(prisma.contractEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventType: 'MILESTONE_CREATED', actorId: 'contractor-owner' }),
+    }));
+  });
+
+  it('checks current contract and version content hashes during integrity verification', async () => {
+    const content = { clauses: [{ key: 'delivery', text: 'Deliver produce' }] };
+    const hash = createHash('sha256').update(canonicalJson(content)).digest('hex');
+    const intactContract = { ...contract, content, contentHash: hash };
+    prisma.contract.findUnique.mockResolvedValue(intactContract);
+    prisma.contractVersion.findMany.mockResolvedValue([{ id: 'version-1', contractId: contract.id, version: 1, content, hash, previousHash: null }]);
+    prisma.contractAnnex.findMany.mockResolvedValue([]);
+    prisma.contractEvent.findMany.mockResolvedValue([]);
+    const result = await service.verifyIntegrity(contract.id, { sub: 'contractor-owner', role: Role.CONTRACTOR });
+    expect(result.intact).toBe(true);
+    expect(result.currentContentIntact).toBe(true);
+    expect(result.versionIntegrity).toBe(true);
   });
 });
