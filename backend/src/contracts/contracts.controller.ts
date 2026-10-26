@@ -19,7 +19,7 @@ export class ContractsController {
   ) {}
 
   @Post()
-  @Roles(Role.CONTRACTOR, Role.COOPERATIVE)
+  @Roles(Role.CONTRACTOR)
   async create(@Body() dto: CreateContractDto, @CurrentUser() user: JwtUser) {
     const contract = await this.contracts.create(dto, user);
     return { contract };
