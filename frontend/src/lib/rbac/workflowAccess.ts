@@ -82,7 +82,7 @@ export const FUNCTIONAL_WORKFLOW_ACCESS: Record<
     workflowId: 'B1',
     actors: [
       actor('Contractor', 'org', 'contract:create:org', 'document:create:org'),
-      actor('ProducerCooperative', 'org', 'contract:create:org', 'contract:read:org', 'contract:sign:org'),
+      actor('ProducerCooperative', 'org', 'contract:read:org'),
       actor('ProducerIndividual', 'own', 'contract:read:own', 'contract:sign:own'),
     ],
   },
@@ -90,7 +90,7 @@ export const FUNCTIONAL_WORKFLOW_ACCESS: Record<
     workflowId: 'B2',
     actors: [
       actor('Contractor', 'org', 'contract:read:org'),
-      actor('ProducerCooperative', 'org', 'contract:read:org', 'contract:sign:org'),
+      actor('ProducerCooperative', 'org', 'contract:read:org'),
       actor('ProducerIndividual', 'own', 'contract:read:own', 'contract:sign:own'),
       actor('WBoAWoreda', 'woreda', 'contract:read:woreda'),
     ],
@@ -99,7 +99,6 @@ export const FUNCTIONAL_WORKFLOW_ACCESS: Record<
     workflowId: 'B3',
     actors: [
       actor('Contractor', 'org', 'contract:sign:org', 'signature:create:org'),
-      actor('ProducerCooperative', 'org', 'contract:sign:org', 'signature:create:org'),
       actor('ProducerIndividual', 'own', 'contract:sign:own', 'signature:create:own'),
       actor('KebeleOfficer', 'kebele', 'contract:verify:kebele'),
     ],
