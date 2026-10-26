@@ -29,8 +29,10 @@ export class ContractsController {
     @CurrentUser() user: JwtUser,
     @Query('status') status?: ContractStatus,
     @Query('commodity') commodity?: string,
+    @Query('region') region?: string,
+    @Query('woreda') woreda?: string,
   ) {
-    return this.contracts.list(user, { status, commodity });
+    return this.contracts.list(user, { status, commodity, region, woreda });
   }
 
   @Get(':id')
@@ -39,7 +41,8 @@ export class ContractsController {
   }
 
   @Get(':id/integrity')
-  integrity(@Param('id') id: string) {
+  async integrity(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    await this.contracts.findOne(id, user);
     return this.contracts.verifyIntegrity(id);
   }
 
