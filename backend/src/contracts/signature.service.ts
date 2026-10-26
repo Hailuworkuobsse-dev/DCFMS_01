@@ -46,7 +46,11 @@ export class SignatureService {
 
     const signedAt = new Date();
     const otpVerifiedAt = signedAt;
-    const contentHash = sig.contract.contentHash || createHash('sha256').update(canonicalJson(sig.contract.content)).digest('hex');
+    const recomputedContentHash = createHash('sha256').update(canonicalJson(sig.contract.content)).digest('hex');
+    if (!sig.contract.contentHash || sig.contract.contentHash !== recomputedContentHash) {
+      throw new BadRequestException('Contract content integrity check failed; signing is blocked until the draft is reconciled');
+    }
+    const contentHash = recomputedContentHash;
     const signatureHash = createHash('sha256').update([
       'DCFMS-SIGNATURE-EVIDENCE-V1', sig.contract.id, sig.id, signerId,
       sig.role, sig.method === 'OTP' ? 'OTP' : sig.method, contentHash,
