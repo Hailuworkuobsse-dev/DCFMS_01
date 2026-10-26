@@ -304,9 +304,11 @@ export class ContractsService {
     const body = dto.body.trim();
     if (!body || body.length > 4000) throw new BadRequestException('Comment must contain 1–4000 characters');
     if (contract.status !== 'DRAFT') throw new BadRequestException('Negotiation comments are only available while the contract is a draft');
-    return this.prisma.contractComment.create({
+    const comment = await this.prisma.contractComment.create({
       data: { contractId: id, authorId: actor.sub, body, clauseKey: dto.clauseKey?.slice(0, 120) },
     });
+    await this.recordLifecycleEvent(id, actor, 'NEGOTIATION_COMMENT_ADDED', 'A negotiation comment was added', contract.status, contract.status, { commentId: comment.id, clauseKey: dto.clauseKey || null });
+    return comment;
   }
 
   async listAnnexes(id: string, actor: JwtUser) {
@@ -324,12 +326,14 @@ export class ContractsService {
       title: dto.title.trim(), description: dto.description || null, content: dto.content || null,
       fileName: dto.fileName || null, storageUrl: dto.storageUrl || null,
     })).digest('hex');
-    return this.prisma.contractAnnex.create({
+    const annex = await this.prisma.contractAnnex.create({
       data: {
         contractId: id, title: dto.title.trim(), description: dto.description, content: dto.content as any,
         fileName: dto.fileName, mimeType: dto.mimeType, storageUrl: dto.storageUrl, checksum, createdById: actor.sub,
       },
     });
+    await this.recordLifecycleEvent(id, actor, 'ANNEX_ADDED', `Annex added: ${annex.title}`, contract.status, contract.status, { annexId: annex.id, checksum });
+    return annex;
   }
 
   async compareVersions(id: string, actor: JwtUser) {
@@ -346,11 +350,13 @@ export class ContractsService {
     if (contract.status !== 'DRAFT') throw new BadRequestException('Changes can only be accepted while the contract is a draft');
     const version = await this.prisma.contractVersion.findFirst({ where: { contractId: id, version: dto.version } });
     if (!version) throw new NotFoundException('Contract version not found');
-    return this.prisma.contractChangeAcceptance.upsert({
+    const acceptance = await this.prisma.contractChangeAcceptance.upsert({
       where: { contractId_version_userId: { contractId: id, version: dto.version, userId: actor.sub } },
       create: { contractId: id, version: dto.version, userId: actor.sub, accepted: dto.accepted, comment: dto.comment?.slice(0, 1000) },
       update: { accepted: dto.accepted, comment: dto.comment?.slice(0, 1000), acceptedAt: new Date() },
     });
+    await this.recordLifecycleEvent(id, actor, dto.accepted ? 'VERSION_ACCEPTED' : 'CHANGES_REQUESTED', dto.accepted ? `Version ${dto.version} accepted` : `Changes requested for version ${dto.version}`, contract.status, contract.status, { version: dto.version, accepted: dto.accepted, comment: dto.comment || null });
+    return acceptance;
   }
 
   async listChangeAcceptances(id: string, actor: JwtUser) {
