@@ -6,11 +6,12 @@ interface ContractNegotiationPanelProps {
   status: string;
   initialContent: Record<string, unknown>;
   currentUserId?: string;
+  requiredPartyCount: number;
   onSaved?: () => void;
 }
 
 export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> = ({
-  contractId, status, initialContent, currentUserId, onSaved,
+  contractId, status, initialContent, currentUserId, requiredPartyCount, onSaved,
 }) => {
   const [versions, setVersions] = useState<any[]>([]);
   const [comments, setComments] = useState<any[]>([]);
@@ -100,6 +101,8 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
       .filter((key) => JSON.stringify(oldByKey.get(key) ?? null) !== JSON.stringify(newByKey.get(key) ?? null))
       .map((key) => ({ key, oldClause: oldByKey.get(key), newClause: newByKey.get(key) }));
   }, [selectedOlder, latestVersion]);
+  const currentVersionAcceptances = acceptances.filter((item) => item.version === latestVersion?.version && item.accepted);
+  const acceptedPartyCount = new Set(currentVersionAcceptances.map((item) => item.userId)).size;
   const ownAcceptance = acceptances.find((item) => item.version === latestVersion?.version && item.userId === currentUserId);
 
   const saveDraft = async () => {
@@ -230,6 +233,8 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
               <div className="rounded-xl border border-stone-200 p-3">
                 <p className="text-xs font-semibold text-stone-900">Your response to the latest version</p>
                 <p className="mt-1 text-[11px] text-stone-500">Responses are stored against a specific version; a new edit requires a new response.</p>
+                <p className="mt-2 text-xs font-semibold text-stone-800">Accepted by {acceptedPartyCount} of {requiredPartyCount} required parties</p>
+                {acceptedPartyCount >= requiredPartyCount && <p className="mt-1 text-xs font-semibold text-emerald-700">All parties have accepted this version. It can proceed to the signature stage.</p>}
                 {ownAcceptance && <p className="mt-2 text-xs">Your current response: <strong>{ownAcceptance.accepted ? 'Accepted' : 'Changes requested'}</strong></p>}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button type="button" disabled={status !== 'DRAFT' || !latestVersion} onClick={() => void respondToChange(true)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Accept version</button>
