@@ -73,16 +73,23 @@ export class ContractsService {
     }
 
     const farmerIds = [...new Set(dto.parties.map((p) => p.farmerId).filter((id): id is string => Boolean(id)))];
+    let contractRegion = dto.region;
+    let contractWoreda = dto.woreda;
     if (farmerIds.length) {
       const existing = await this.prisma.farmer.findMany({ where: { id: { in: farmerIds } }, select: { id: true, user: { select: { region: true, woreda: true } } } });
       if (existing.length !== farmerIds.length) throw new BadRequestException('One or more producer records do not exist');
-      const regions = new Set(existing.map((farmer: any) => farmer.user?.region).filter(Boolean));
-      const woredas = new Set(existing.map((farmer: any) => farmer.user?.woreda).filter(Boolean));
+      if (existing.some((farmer: any) => !farmer.user?.region || !farmer.user?.woreda)) {
+        throw new BadRequestException('Every selected producer must have a registered region and woreda');
+      }
+      const regions = new Set(existing.map((farmer: any) => farmer.user.region));
+      const woredas = new Set(existing.map((farmer: any) => farmer.user.woreda));
       if (regions.size > 1 || woredas.size > 1) throw new BadRequestException('A contract cannot mix producers from different regional or woreda jurisdictions');
-      const producerRegion = existing[0]?.user?.region;
-      const producerWoreda = existing[0]?.user?.woreda;
-      if (dto.region && producerRegion && dto.region !== producerRegion) throw new ForbiddenException('Contract region must match the selected producer');
-      if (dto.woreda && producerWoreda && dto.woreda !== producerWoreda) throw new ForbiddenException('Contract woreda must match the selected producer');
+      const producerRegion = existing[0].user.region;
+      const producerWoreda = existing[0].user.woreda;
+      if (dto.region && dto.region !== producerRegion) throw new ForbiddenException('Contract region must match the selected producer');
+      if (dto.woreda && dto.woreda !== producerWoreda) throw new ForbiddenException('Contract woreda must match the selected producer');
+      contractRegion = producerRegion;
+      contractWoreda = producerWoreda;
     }
     if (dto.parcelIds?.length) {
       const parcels = await this.prisma.parcel.findMany({
@@ -103,7 +110,7 @@ export class ContractsService {
         priceMechanism: dto.priceMechanism, fixedPrice: dto.fixedPrice,
         deliveryStart: dto.deliveryStart ? new Date(dto.deliveryStart) : null,
         deliveryEnd: dto.deliveryEnd ? new Date(dto.deliveryEnd) : null,
-        content: dto.content, contentHash, region: dto.region, woreda: dto.woreda,
+        content: dto.content, contentHash, region: contractRegion, woreda: contractWoreda,
         createdById: actor.sub, status: 'DRAFT',
         parties: { create: dto.parties.map((p) => ({ role: 'FARMER', farmerId: p.farmerId })) },
         versions: { create: [{ version: 1, content: dto.content, hash: contentHash, createdById: actor.sub }] },
@@ -145,7 +152,7 @@ export class ContractsService {
   async findOne(id: string, actor: JwtUser) {
     const contract = await this.prisma.contract.findUnique({
       where: { id },
-      include: { parties: { include: { farmer: { include: { user: { select: { id: true, region: true, woreda: true, kebele: true } }, cooperative: true } } } },
+      include: { parties: { include: { farmer: { select: { id: true, userId: true, cooperativeId: true, user: { select: { id: true, region: true, woreda: true, kebele: true } }, cooperative: { select: { userId: true } } } } } },
         signatures: true, versions: { orderBy: { version: 'desc' } }, payments: true, loans: true, vouchers: true },
     });
     // Return 404 for both missing and unauthorized records to avoid ID enumeration.
@@ -155,7 +162,7 @@ export class ContractsService {
 
   private applyActorScope(where: Prisma.ContractWhereInput, actor: JwtUser) {
     if (actor.role === Role.SYSTEM_ADMIN || actor.role === Role.AUDITOR) return;
-    if (actor.adminLevel === AdminLevel.FEDERAL && [Role.MOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER].includes(actor.role as Role)) return;
+    if (actor.adminLevel === AdminLevel.FEDERAL && [Role.MOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER].some((role) => role === actor.role)) return;
     if (actor.adminLevel === AdminLevel.REGIONAL) {
       if (!actor.region) { where.id = '__no_scope__'; return; }
       where.region = actor.region;
@@ -233,7 +240,7 @@ export class ContractsService {
 
   async sendForSignatures(id: string, actor: JwtUser) {
     const contract = await this.findOne(id, actor);
-    if (contract.createdById !== actor.sub || ![Role.CONTRACTOR, Role.COOPERATIVE].includes(actor.role as Role)) {
+    if (contract.createdById !== actor.sub || (actor.role !== Role.CONTRACTOR && actor.role !== Role.COOPERATIVE)) {
       throw new ForbiddenException('Only the contract creator may submit this contract for signature');
     }
     if (contract.status !== 'DRAFT') {
