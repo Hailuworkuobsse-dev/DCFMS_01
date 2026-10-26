@@ -255,7 +255,9 @@ export const ROLE_REGISTRY: Record<RoleId, RoleDefinition> = {
     dashboardComponent: 'ProducerCooperativeDashboard',
     permissions: [
       'dashboard:read:org',
+      'contract:create:org',
       'contract:read:org',
+      'contract:update:org',
       'contract:sign:org',
       'linkage:create:org',
       'linkage:read:org',
