@@ -50,6 +50,33 @@ describe('ContractsService access control', () => {
     service = new ContractsService(prisma, { log: jest.fn() } as any, { canTransition: jest.fn().mockReturnValue(true) } as any);
   });
 
+  it('scopes contractor lists to contracts created by the authenticated contractor', async () => {
+    await service.list({ sub: 'contractor-1', role: Role.CONTRACTOR }, {});
+    expect(prisma.contract.findMany.mock.calls[0][0].where.createdById).toBe('contractor-1');
+  });
+
+  it('scopes farmer lists to contracts containing that farmer record', async () => {
+    await service.list({ sub: 'farmer-1', role: Role.FARMER }, {});
+    expect(prisma.contract.findMany.mock.calls[0][0].where.parties.some.farmer.userId).toBe('farmer-1');
+  });
+
+  it('does not let a regional list filter widen the actor\'s region', async () => {
+    await service.list({
+      sub: 'regional-officer', role: Role.RBOA_OFFICER, adminLevel: AdminLevel.REGIONAL, region: 'Oromia',
+    }, { region: 'Amhara' });
+    const where = prisma.contract.findMany.mock.calls[0][0].where;
+    expect(where.region).toBe('Oromia');
+    expect(where.AND).toContainEqual({ region: 'Amhara' });
+  });
+
+  it('denies list access to a field agent without an explicit contract assignment relationship', async () => {
+    await service.list({
+      sub: 'field-agent', role: Role.FIELD_AGENT, adminLevel: AdminLevel.WOREDA,
+      region: 'Oromia', woreda: 'Ada',
+    }, {});
+    expect(prisma.contract.findMany.mock.calls[0][0].where.id).toBe('__no_scope__');
+  });
+
   it('allows a contractor to read only contracts created by that authenticated account', async () => {
     await expect(service.findOne(contract.id, { sub: 'contractor-owner', role: Role.CONTRACTOR }))
       .resolves.toMatchObject({ id: contract.id });
