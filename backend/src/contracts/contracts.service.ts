@@ -56,6 +56,11 @@ export class ContractsService {
     if (dto.parties.some((p) => p.role === 'CONTRACTOR' || !p.farmerId)) {
       throw new BadRequestException('Select valid producer parties; contractor identity is derived from your account');
     }
+    if (dto.templateId) {
+      const template = await this.prisma.contractTemplate.findUnique({ where: { id: dto.templateId } });
+      if (!template || template.status !== 'APPROVED') throw new BadRequestException('Select an approved contract template');
+      this.validateTemplateClauses(template.clauses, dto.content);
+    }
 
     const farmerIds = [...new Set(dto.parties.map((p) => p.farmerId).filter((id): id is string => Boolean(id)))];
     let contractRegion = dto.region;
@@ -92,7 +97,7 @@ export class ContractsService {
       data: {
         contractNo, commodity: dto.commodity, quantity: dto.quantity,
         unit: dto.unit || 'quintal', quality: dto.quality,
-        priceMechanism: dto.priceMechanism, fixedPrice: dto.fixedPrice,
+        priceMechanism: dto.priceMechanism, fixedPrice: dto.fixedPrice, templateId: dto.templateId,
         deliveryStart: dto.deliveryStart ? new Date(dto.deliveryStart) : null,
         deliveryEnd: dto.deliveryEnd ? new Date(dto.deliveryEnd) : null,
         content: dto.content, contentHash, region: contractRegion, woreda: contractWoreda,
@@ -118,6 +123,200 @@ export class ContractsService {
       entity: 'Contract', entityId: contract.id, after: { contractNo },
     });
     return contract;
+  }
+
+  async listApprovedTemplates(actor: JwtUser, commodity?: string) {
+    if (actor.role === Role.CONTRACTOR) {
+      const contractor = await this.prisma.contractor.findUnique({ where: { userId: actor.sub } });
+      if (!contractor || contractor.approvalStatus !== 'APPROVED') {
+        throw new ForbiddenException('An approved contractor account is required');
+      }
+    }
+    return this.prisma.contractTemplate.findMany({
+      where: {
+        status: 'APPROVED',
+        ...(commodity ? { OR: [{ commodity }, { commodity: null }] } : {}),
+      },
+      orderBy: [{ commodity: 'asc' }, { title: 'asc' }, { version: 'desc' }],
+    });
+  }
+
+  async createTemplate(dto: { title: string; description?: string; commodity?: string; language?: string; clauses: unknown }, actor: JwtUser) {
+    if (actor.role !== Role.SYSTEM_ADMIN) throw new ForbiddenException('Only system administrators can manage contract templates');
+    if (!Array.isArray(dto.clauses) || dto.clauses.length === 0) {
+      throw new BadRequestException('A template must contain at least one structured clause');
+    }
+    return this.prisma.contractTemplate.create({
+      data: {
+        title: dto.title.trim(), description: dto.description, commodity: dto.commodity,
+        language: dto.language || 'en', clauses: dto.clauses as any, createdById: actor.sub, status: 'DRAFT',
+      },
+    });
+  }
+
+  async approveTemplate(id: string, actor: JwtUser) {
+    if (actor.role !== Role.SYSTEM_ADMIN) throw new ForbiddenException('Only system administrators can approve contract templates');
+    const template = await this.prisma.contractTemplate.findUnique({ where: { id } });
+    if (!template) throw new NotFoundException('Template not found');
+    if (!Array.isArray(template.clauses) || template.clauses.length === 0) {
+      throw new BadRequestException('A template must contain at least one structured clause');
+    }
+    return this.prisma.contractTemplate.update({
+      where: { id },
+      data: { status: 'APPROVED', approvedById: actor.sub, approvedAt: new Date() },
+    });
+  }
+
+  async lookupContractParties(query: string, actor: JwtUser) {
+    if (actor.role !== Role.CONTRACTOR) throw new ForbiddenException('Only contractors can search for contracting producers');
+    const contractor = await this.prisma.contractor.findUnique({ where: { userId: actor.sub } });
+    if (!contractor || contractor.approvalStatus !== 'APPROVED') throw new ForbiddenException('An approved contractor account is required');
+    const term = query.trim();
+    if (term.length < 2) throw new BadRequestException('Enter at least two characters to search the verified producer directory');
+    return this.prisma.farmer.findMany({
+      where: {
+        user: { isActive: true, role: Role.FARMER, OR: [{ fullName: { contains: term } }, { phone: { contains: term } }] },
+        parcels: { some: { isLocked: false } },
+      },
+      take: 20,
+      orderBy: { user: { fullName: 'asc' } },
+      select: {
+        id: true,
+        user: { select: { fullName: true, phone: true, region: true, woreda: true, kebele: true } },
+        cooperative: { select: { registrationNo: true, user: { select: { fullName: true } } } },
+        parcels: { where: { isLocked: false }, select: { id: true, name: true, sizeHa: true, crop: true, season: true }, take: 20 },
+      },
+    });
+  }
+
+  private async getEditableContract(id: string, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) {
+      throw new ForbiddenException('Only the authenticated contract creator may edit this draft');
+    }
+    if (contract.status !== 'DRAFT') throw new BadRequestException('Only draft contracts can be edited during negotiation');
+    return contract;
+  }
+
+  private validateTemplateClauses(templateClauses: any, content: Record<string, any>) {
+    const requiredClauses = Array.isArray(templateClauses) ? templateClauses : templateClauses?.clauses;
+    if (!Array.isArray(requiredClauses)) throw new BadRequestException('Approved template clauses are malformed');
+    const submitted = Array.isArray(content.clauses) ? content.clauses : [];
+    const byKey = new Map(submitted.map((clause: any) => [clause?.key, clause]));
+    for (const required of requiredClauses) {
+      if (!required || typeof required.key !== 'string') throw new BadRequestException('Template contains an invalid clause definition');
+      const current: any = byKey.get(required.key);
+      if (required.mandatory && !current) throw new BadRequestException(`Mandatory clause "${required.title || required.key}" cannot be removed`);
+      if (current && required.editable === false && current.text !== required.text) {
+        throw new BadRequestException(`Clause "${required.title || required.key}" is locked by the approved template`);
+      }
+    }
+  }
+
+  private async assertNegotiationParty(contract: any, actor: JwtUser) {
+    const isParty = contract.createdById === actor.sub ||
+      (contract.parties || []).some((party: any) => party.farmer?.userId === actor.sub) ||
+      (actor.role === Role.COOPERATIVE && (contract.parties || []).some((party: any) => party.farmer?.cooperative?.userId === actor.sub));
+    if (!isParty || actor.role === Role.AUDITOR || actor.role === Role.SYSTEM_ADMIN) {
+      throw new ForbiddenException('Only a contracting party may comment or accept negotiated changes');
+    }
+  }
+
+  async saveDraft(id: string, dto: { content: Record<string, any>; expectedVersion: number; changeSummary?: string }, actor: JwtUser) {
+    const contract = await this.getEditableContract(id, actor);
+    const versions = contract.versions || [];
+    const latestVersion = versions.length ? Math.max(...versions.map((version: any) => version.version)) : 0;
+    if (dto.expectedVersion !== latestVersion) {
+      throw new BadRequestException('This draft has changed since you opened it. Reload and compare the latest version before saving.');
+    }
+    if (contract.templateId) {
+      const template = await this.prisma.contractTemplate.findUnique({ where: { id: contract.templateId } });
+      if (!template || template.status !== 'APPROVED') throw new BadRequestException('The selected contract template is not currently approved');
+      this.validateTemplateClauses(template.clauses, dto.content);
+    }
+    const hash = createHash('sha256').update(canonicalJson(dto.content)).digest('hex');
+    const nextVersion = latestVersion + 1;
+    return this.prisma.$transaction(async (tx: any) => {
+      const updated = await tx.contract.update({
+        where: { id, status: 'DRAFT', updatedAt: contract.updatedAt },
+        data: { content: dto.content, contentHash: hash },
+      });
+      const version = await tx.contractVersion.create({
+        data: { contractId: id, version: nextVersion, content: dto.content, hash, createdById: actor.sub },
+      });
+      await tx.contractComment.create({
+        data: { contractId: id, authorId: actor.sub, body: (dto.changeSummary || `Saved draft version ${nextVersion}`).slice(0, 4000), clauseKey: null },
+      });
+      await this.audit.log({
+        actorId: actor.sub, action: AuditAction.UPDATE, entity: 'Contract', entityId: id,
+        before: { version: latestVersion }, after: { version: nextVersion, hash },
+      });
+      return { contract: updated, version };
+    });
+  }
+
+  async listComments(id: string, actor: JwtUser) {
+    await this.findOne(id, actor);
+    return this.prisma.contractComment.findMany({ where: { contractId: id }, orderBy: { createdAt: 'asc' } });
+  }
+
+  async addComment(id: string, dto: { body: string; clauseKey?: string }, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    await this.assertNegotiationParty(contract, actor);
+    const body = dto.body.trim();
+    if (!body || body.length > 4000) throw new BadRequestException('Comment must contain 1–4000 characters');
+    if (contract.status !== 'DRAFT') throw new BadRequestException('Negotiation comments are only available while the contract is a draft');
+    return this.prisma.contractComment.create({
+      data: { contractId: id, authorId: actor.sub, body, clauseKey: dto.clauseKey?.slice(0, 120) },
+    });
+  }
+
+  async listAnnexes(id: string, actor: JwtUser) {
+    await this.findOne(id, actor);
+    return this.prisma.contractAnnex.findMany({ where: { contractId: id }, orderBy: { createdAt: 'asc' } });
+  }
+
+  async addAnnex(id: string, dto: { title: string; description?: string; content?: Record<string, any>; fileName?: string; mimeType?: string; storageUrl?: string }, actor: JwtUser) {
+    const contract = await this.getEditableContract(id, actor);
+    await this.assertNegotiationParty(contract, actor);
+    if (!dto.title.trim()) throw new BadRequestException('Annex title is required');
+    if (dto.storageUrl && !dto.storageUrl.startsWith('https://')) throw new BadRequestException('Annex links must use HTTPS');
+    const checksum = createHash('sha256').update(canonicalJson({
+      title: dto.title.trim(), description: dto.description || null, content: dto.content || null,
+      fileName: dto.fileName || null, storageUrl: dto.storageUrl || null,
+    })).digest('hex');
+    return this.prisma.contractAnnex.create({
+      data: {
+        contractId: id, title: dto.title.trim(), description: dto.description, content: dto.content as any,
+        fileName: dto.fileName, mimeType: dto.mimeType, storageUrl: dto.storageUrl, checksum, createdById: actor.sub,
+      },
+    });
+  }
+
+  async compareVersions(id: string, actor: JwtUser) {
+    await this.findOne(id, actor);
+    return this.prisma.contractVersion.findMany({
+      where: { contractId: id }, orderBy: { version: 'asc' },
+      select: { id: true, version: true, content: true, hash: true, createdById: true, createdAt: true },
+    });
+  }
+
+  async acceptChange(id: string, dto: { version: number; accepted: boolean; comment?: string }, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    await this.assertNegotiationParty(contract, actor);
+    if (contract.status !== 'DRAFT') throw new BadRequestException('Changes can only be accepted while the contract is a draft');
+    const version = await this.prisma.contractVersion.findFirst({ where: { contractId: id, version: dto.version } });
+    if (!version) throw new NotFoundException('Contract version not found');
+    return this.prisma.contractChangeAcceptance.upsert({
+      where: { contractId_version_userId: { contractId: id, version: dto.version, userId: actor.sub } },
+      create: { contractId: id, version: dto.version, userId: actor.sub, accepted: dto.accepted, comment: dto.comment?.slice(0, 1000) },
+      update: { accepted: dto.accepted, comment: dto.comment?.slice(0, 1000), acceptedAt: new Date() },
+    });
+  }
+
+  async listChangeAcceptances(id: string, actor: JwtUser) {
+    await this.findOne(id, actor);
+    return this.prisma.contractChangeAcceptance.findMany({ where: { contractId: id }, orderBy: [{ version: 'asc' }, { acceptedAt: 'asc' }] });
   }
 
   async list(actor: JwtUser, filter: { status?: ContractStatus; commodity?: string; region?: string; woreda?: string }) {
