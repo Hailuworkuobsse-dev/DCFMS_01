@@ -1,5 +1,5 @@
 import {
-  IsArray, IsBoolean, IsNumber, IsObject, IsOptional, IsString,
+  IsArray, IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString,
 } from 'class-validator';
 
 export class CreateContractDto {
@@ -20,7 +20,7 @@ export class CreateContractDto {
 }
 
 export class ApproveContractDto {
-  @IsString() decision: 'APPROVE' | 'REJECT';
+  @IsIn(['APPROVE', 'REJECT', 'RETURN_FOR_CORRECTION']) decision: 'APPROVE' | 'REJECT' | 'RETURN_FOR_CORRECTION';
   @IsOptional() @IsString() note?: string;
 }
 

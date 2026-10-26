@@ -48,6 +48,7 @@ enum ContractStatus {
   COMPLETED
   ADJUSTED
   REJECTED
+  RETURNED_FOR_CORRECTION
   CANCELLED
 }
 
@@ -170,6 +171,7 @@ model OtpCode {
   purpose   String   @default("SIGN")
   expiresAt DateTime
   consumed  Boolean  @default(false)
+  attempts  Int      @default(0)
   createdAt DateTime @default(now())
 
   @@index([userId, purpose])
@@ -279,6 +281,7 @@ model Contract {
   rejectionNote  String?
   parties        ContractParty[]
   signatures     Signature[]
+  reviewActions ContractReviewAction[]
   parcels        Parcel[]
   vouchers       Voucher[]
   loans          Loan[]
@@ -329,9 +332,13 @@ model Signature {
   method     SignatureMethod @default(OTP)
   status     SignatureStatus @default(PENDING)
   signatureHash String?
+  contentHashAtSigning String?
+  otpVerifiedAt DateTime?
+  authorityVerified Boolean @default(false)
   signedAt   DateTime?
   ipAddress  String?
   deviceInfo String?
+  evidence SignatureEvidence?
   createdAt  DateTime        @default(now())
 
   @@index([contractId])
@@ -549,4 +556,44 @@ model ContractChangeAcceptance {
 
   @@unique([contractId, version, userId])
   @@index([userId, accepted])
+}
+
+
+model ContractReviewAction {
+  id           String   @id @default(uuid())
+  contractId   String
+  contract     Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  reviewerId   String
+  reviewerRole String
+  action       String // APPROVE | REJECT | RETURN_FOR_CORRECTION
+  note         String? @db.Text
+  fromStatus   String
+  toStatus     String
+  scopeRegion  String?
+  scopeWoreda  String?
+  createdAt    DateTime @default(now())
+  @@index([reviewerId, createdAt])
+  @@index([action, createdAt])
+}
+
+
+model SignatureEvidence {
+  id                 String    @id @default(uuid())
+  signatureId        String    @unique
+  signature          Signature @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  contractId         String
+  signerId           String
+  signerRole         String
+  method             SignatureMethod
+  contentHash        String
+  signatureHash      String   @unique
+  authorityBasis     String
+  authorityReference String?
+  otpVerifiedAt      DateTime?
+  signedAt           DateTime
+  ipAddress          String?
+  userAgent          String?  @db.Text
+  createdAt          DateTime @default(now())
+  @@index([contractId, signedAt])
+  @@index([signerId, signedAt])
 }

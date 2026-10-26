@@ -6,12 +6,13 @@ interface ContractNegotiationPanelProps {
   status: string;
   initialContent: Record<string, unknown>;
   currentUserId?: string;
+  currentUserRole?: string;
   requiredPartyCount: number;
   onSaved?: () => void;
 }
 
 export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> = ({
-  contractId, status, initialContent, currentUserId, requiredPartyCount, onSaved,
+  contractId, status, initialContent, currentUserId, currentUserRole, requiredPartyCount, onSaved,
 }) => {
   const [versions, setVersions] = useState<any[]>([]);
   const [comments, setComments] = useState<any[]>([]);
@@ -83,6 +84,7 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
   };
 
   const latestVersion = versions.length ? versions[versions.length - 1] : null;
+  const canEditDraft = status === 'DRAFT' || (status === 'RETURNED_FOR_CORRECTION' && currentUserRole?.toUpperCase() === 'CONTRACTOR');
   const selectedOlder = versions.find((version) => String(version.version) === olderVersion);
   const latestContent = latestVersion?.content || {};
   const changedKeys = useMemo(() => {
@@ -182,23 +184,23 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
                     {clause.editable === false && <span className="rounded bg-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-700">Template-locked</span>}
                     <span className="ml-auto text-[10px] text-stone-500">{clause.key}</span>
                   </div>
-                  <textarea rows={3} value={clause.text || ''} disabled={status !== 'DRAFT' || clause.editable === false} onChange={(event) => updateClauseText(index, event.target.value)} className="mt-2 w-full rounded border border-stone-300 p-2 text-xs disabled:bg-stone-100" aria-label={`Clause text: ${clause.title || clause.key}`} />
-                  {status === 'DRAFT' && clause.editable !== false && !clause.mandatory && <button type="button" onClick={() => replaceClauses(clauses.filter((_, clauseIndex) => clauseIndex !== index))} className="mt-2 text-[11px] font-semibold text-rose-700 underline">Remove optional clause</button>}
+                  <textarea rows={3} value={clause.text || ''} disabled={!canEditDraft || clause.editable === false} onChange={(event) => updateClauseText(index, event.target.value)} className="mt-2 w-full rounded border border-stone-300 p-2 text-xs disabled:bg-stone-100" aria-label={`Clause text: ${clause.title || clause.key}`} />
+                  {canEditDraft && clause.editable !== false && !clause.mandatory && <button type="button" onClick={() => replaceClauses(clauses.filter((_, clauseIndex) => clauseIndex !== index))} className="mt-2 text-[11px] font-semibold text-rose-700 underline">Remove optional clause</button>}
                 </article>)}
               </div>
               <div className="space-y-2 rounded-lg border border-dashed border-stone-300 p-3">
                 <p className="text-xs font-semibold text-stone-800">Add a negotiated clause</p>
-                <input value={newClauseTitle} disabled={status !== 'DRAFT'} onChange={(event) => setNewClauseTitle(event.target.value)} placeholder="Clause title" className="w-full rounded border border-stone-300 px-3 py-2 text-xs disabled:bg-stone-100" />
-                <textarea value={newClauseText} disabled={status !== 'DRAFT'} onChange={(event) => setNewClauseText(event.target.value)} rows={2} placeholder="Proposed clause wording" className="w-full rounded border border-stone-300 p-3 text-xs disabled:bg-stone-100" />
-                <button type="button" disabled={status !== 'DRAFT' || !newClauseTitle.trim() || !newClauseText.trim()} onClick={addCustomClause} className="rounded border border-stone-300 px-3 py-2 text-xs font-semibold disabled:opacity-50">Add clause</button>
+                <input value={newClauseTitle} disabled={!canEditDraft} onChange={(event) => setNewClauseTitle(event.target.value)} placeholder="Clause title" className="w-full rounded border border-stone-300 px-3 py-2 text-xs disabled:bg-stone-100" />
+                <textarea value={newClauseText} disabled={!canEditDraft} onChange={(event) => setNewClauseText(event.target.value)} rows={2} placeholder="Proposed clause wording" className="w-full rounded border border-stone-300 p-3 text-xs disabled:bg-stone-100" />
+                <button type="button" disabled={!canEditDraft || !newClauseTitle.trim() || !newClauseText.trim()} onClick={addCustomClause} className="rounded border border-stone-300 px-3 py-2 text-xs font-semibold disabled:opacity-50">Add clause</button>
               </div>
               <details className="rounded-lg border border-stone-200 p-3">
                 <summary className="cursor-pointer text-xs font-semibold text-stone-700">Advanced structured-content editor (JSON)</summary>
-                <textarea id="draft-content" rows={10} value={contentText} disabled={status !== 'DRAFT'} onChange={(event) => setContentText(event.target.value)} className="mt-3 w-full rounded-lg border border-stone-300 p-3 font-mono text-xs disabled:bg-stone-100" />
+                <textarea id="draft-content" rows={10} value={contentText} disabled={!canEditDraft} onChange={(event) => setContentText(event.target.value)} className="mt-3 w-full rounded-lg border border-stone-300 p-3 font-mono text-xs disabled:bg-stone-100" />
               </details>
               <label className="block text-xs font-medium text-stone-700" htmlFor="change-summary">Change summary</label>
-              <input id="change-summary" value={changeSummary} disabled={status !== 'DRAFT'} onChange={(event) => setChangeSummary(event.target.value)} placeholder="Explain what changed and why" className="w-full rounded-lg border border-stone-300 px-3 py-2 text-xs disabled:bg-stone-100" />
-              <button type="button" onClick={() => void saveDraft()} disabled={isSaving || status !== 'DRAFT'} className="rounded-lg bg-stone-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{isSaving ? 'Saving…' : 'Save new draft version'}</button>
+              <input id="change-summary" value={changeSummary} disabled={!canEditDraft} onChange={(event) => setChangeSummary(event.target.value)} placeholder="Explain what changed and why" className="w-full rounded-lg border border-stone-300 px-3 py-2 text-xs disabled:bg-stone-100" />
+              <button type="button" onClick={() => void saveDraft()} disabled={isSaving || !canEditDraft} className="rounded-lg bg-stone-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{isSaving ? 'Saving…' : 'Save new draft version'}</button>
               <p className="text-[11px] text-stone-500">Approved template clauses marked mandatory cannot be removed; locked clause text is checked on the server. Saves use optimistic version checks to prevent overwriting another party's latest draft.</p>
             </div>
             <div className="space-y-3">

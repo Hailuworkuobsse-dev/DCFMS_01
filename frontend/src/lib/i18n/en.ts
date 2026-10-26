@@ -61,6 +61,7 @@ export const enTranslations = {
     admin: 'Governance & System',
     dashboard: 'Dashboard',
     contracts: 'Contracts',
+    statutoryReview: 'Statutory Review Queue',
     linkage: 'Linkage & Competency',
     inputs: 'Inputs & Vouchers',
     monitoring: 'Field Monitoring',

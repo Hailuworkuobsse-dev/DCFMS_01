@@ -8,6 +8,7 @@ import { DashboardRouterPage } from './features/dashboards/DashboardRouterPage';
 import { ContractListPage } from './features/contracts/ContractListPage';
 import { ContractCreateWizardPage } from './features/contracts/ContractCreateWizardPage';
 import { ContractDetailPage } from './features/contracts/ContractDetailPage';
+import { StatutoryReviewPage } from './features/contracts/StatutoryReviewPage';
 import { LinkagePage } from './features/linkage/LinkagePage';
 import { InputsPage } from './features/inputs/InputsPage';
 import { FinancePage } from './features/finance/FinancePage';
@@ -28,6 +29,7 @@ function getRoutePermissions(path: string, scope: PermissionScope | undefined): 
   if (!scope) return [];
   if (path === '/dashboard' || path === '/storybook') return [`dashboard:read:${scope}`];
   if (path === '/contracts/new') return [`contract:create:${scope}`];
+  if (path === '/statutory-review') return [`contract:approve:${scope}`];
   if (path === '/contracts' || path.startsWith('/contracts/')) return [`contract:read:${scope}`];
   if (path === '/linkage') return [`linkage:read:${scope}`];
   if (path === '/inputs') return [`input_voucher:read:${scope}`];
@@ -130,6 +132,10 @@ export default function App() {
   const renderContent = () => {
     if (currentPath === '/dashboard') {
       return <DashboardRouterPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/statutory-review') {
+      return <StatutoryReviewPage onNavigate={navigate} />;
     }
 
     if (currentPath === '/contracts/new') {
