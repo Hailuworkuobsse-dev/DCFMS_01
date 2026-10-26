@@ -41,28 +41,23 @@ export class ContractsService {
   ) {}
 
   async create(dto: CreateContractDto, actor: JwtUser) {
-    // Only the actual contracting parties may initiate a contract. Government
-    // approval roles must use the review/approval workflow, never impersonate a party.
-    if (actor.role !== Role.CONTRACTOR && actor.role !== Role.COOPERATIVE) {
-      throw new ForbiddenException('Only a registered contractor or cooperative may create a contract');
+    // The current schema stores producer parties only; the buyer is the creator.
+    // Do not let a cooperative impersonate a buyer until organization-party linkage
+    // is modeled explicitly in ContractParty.
+    if (actor.role !== Role.CONTRACTOR) {
+      throw new ForbiddenException('Only a registered contractor may create a contract');
     }
     if (!dto.parties?.length) throw new BadRequestException('At least one producer party is required');
 
-    if (actor.role === Role.CONTRACTOR) {
-      const contractor = await this.prisma.contractor.findUnique({ where: { userId: actor.sub } });
-      if (!contractor || contractor.approvalStatus !== 'APPROVED') {
-        throw new ForbiddenException('An approved contractor account is required to create contracts');
-      }
-      if (dto.parties.some((p) => p.role === 'CONTRACTOR' || !p.farmerId)) {
-        throw new BadRequestException('Select valid producer parties; contractor identity is derived from your account');
-      }
-    } else {
-      const cooperative = await this.prisma.cooperative.findUnique({ where: { userId: actor.sub } });
-      if (!cooperative) throw new ForbiddenException('A registered cooperative account is required');
-      if (dto.parties.some((p) => !p.farmerId)) {
-        throw new BadRequestException('Every cooperative contract party must reference a registered producer');
-      }
-      const farmerIds = [...new Set(dto.parties.map((p) => p.farmerId as string))];
+    const contractor = await this.prisma.contractor.findUnique({ where: { userId: actor.sub } });
+    if (!contractor || contractor.approvalStatus !== 'APPROVED') {
+      throw new ForbiddenException('An approved contractor account is required to create contracts');
+    }
+    if (dto.parties.some((p) => p.role === 'CONTRACTOR' || !p.farmerId)) {
+      throw new BadRequestException('Select valid producer parties; contractor identity is derived from your account');
+    }
+
+    const farmerIds = [...new Set(dto.parties.map((p) => p.farmerId as string))];
       const members = await this.prisma.farmer.findMany({
         where: { id: { in: farmerIds }, cooperativeId: cooperative.id },
         select: { id: true },
@@ -299,7 +294,7 @@ export class ContractsService {
 
   async sendForSignatures(id: string, actor: JwtUser) {
     const contract = await this.findOne(id, actor);
-    if (contract.createdById !== actor.sub || (actor.role !== Role.CONTRACTOR && actor.role !== Role.COOPERATIVE)) {
+    if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) {
       throw new ForbiddenException('Only the contract creator may submit this contract for signature');
     }
     if (contract.status !== 'DRAFT') {
