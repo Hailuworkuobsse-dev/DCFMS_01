@@ -711,9 +711,9 @@ export class ContractsService {
     if (!contract) throw new NotFoundException('Contract not found while recording lifecycle event');
     const previous = await this.prisma.contractEvent.findFirst({
       where: { contractId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { eventHash: true },
+      select: { eventHash: true, createdAt: true },
     });
-    const createdAt = new Date();
+    const createdAt = previous ? new Date(Math.max(Date.now(), new Date(previous.createdAt).getTime() + 1)) : new Date();
     const payload = {
       contractId, actorId: actor?.sub || null, actorRole: actor?.role || null,
       eventType, fromStatus: fromStatus || null, toStatus: toStatus || null,
