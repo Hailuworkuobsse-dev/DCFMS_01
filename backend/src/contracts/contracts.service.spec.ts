@@ -183,6 +183,44 @@ describe('ContractsService access control', () => {
     }));
   });
 
+  it('limits verified party lookup to approved contractors and registered active producers with available parcels', async () => {
+    prisma.contractor.findUnique.mockResolvedValue({ approvalStatus: 'APPROVED' });
+    prisma.farmer.findMany.mockResolvedValue([]);
+    await service.lookupContractParties('Abebe', { sub: 'contractor-owner', role: Role.CONTRACTOR });
+    expect(prisma.farmer.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        user: expect.objectContaining({ isActive: true, role: Role.FARMER }),
+        parcels: { some: { isLocked: false } },
+      }),
+    }));
+  });
+
+  it('denies producer-directory lookup to non-contractor roles', async () => {
+    await expect(service.lookupContractParties('Abebe', { sub: 'farmer-owner', role: Role.FARMER }))
+      .rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.farmer.findMany).not.toHaveBeenCalled();
+  });
+
+  it('records a version-specific acceptance from a registered contracting party', async () => {
+    prisma.contractVersion.findFirst.mockResolvedValue({ id: 'version-1', version: 1 });
+    await service.acceptChange(contract.id, { version: 1, accepted: true, comment: 'Reviewed terms' }, {
+      sub: 'farmer-owner', role: Role.FARMER,
+    });
+    expect(prisma.contractChangeAcceptance.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { contractId_version_userId: { contractId: contract.id, version: 1, userId: 'farmer-owner' } },
+      create: expect.objectContaining({ accepted: true, comment: 'Reviewed terms' }),
+    }));
+  });
+
+  it('stores negotiation comments against a specific clause for a contracting party', async () => {
+    await service.addComment(contract.id, { body: 'Please clarify the delivery date.', clauseKey: 'delivery' }, {
+      sub: 'farmer-owner', role: Role.FARMER,
+    });
+    expect(prisma.contractComment.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ contractId: contract.id, authorId: 'farmer-owner', clauseKey: 'delivery' }),
+    }));
+  });
+
   it('saves a new draft version using the expected current version', async () => {
     prisma.contract.update.mockResolvedValue({ ...contract, content: { clauses: [] } });
     await service.saveDraft(contract.id, {
