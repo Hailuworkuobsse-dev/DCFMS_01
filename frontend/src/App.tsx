@@ -29,6 +29,7 @@ function getRoutePermissions(path: string, scope: PermissionScope | undefined): 
   if (!scope) return [];
   if (path === '/dashboard' || path === '/storybook') return [`dashboard:read:${scope}`];
   if (path === '/contracts/new') return [`contract:create:${scope}`];
+  if (path === '/statutory-review') return [`contract:approve:${scope}`];
   if (path === '/contracts' || path.startsWith('/contracts/')) return [`contract:read:${scope}`];
   if (path === '/linkage') return [`linkage:read:${scope}`];
   if (path === '/inputs') return [`input_voucher:read:${scope}`];
