@@ -90,7 +90,7 @@ export class ContractsService {
     if (dto.parcelIds?.length) {
       const parcels = await this.prisma.parcel.findMany({
         where: { id: { in: dto.parcelIds }, farmerId: { in: farmerIds }, isLocked: false },
-        select: { id: true },
+        select: { id: true, farmerId: true },
       });
       if (parcels.length !== new Set(dto.parcelIds).size) {
         throw new ForbiddenException('Every selected parcel must belong to a selected producer and remain available');
@@ -104,19 +104,20 @@ export class ContractsService {
     const contractNo = await this.nextContractNo();
     const contentHash = createHash('sha256').update(canonicalJson(dto.content)).digest('hex');
     const contract = await this.prisma.$transaction(async (tx: any) => {
-      data: {
-        contractNo, commodity: dto.commodity, quantity: dto.quantity,
-        unit: dto.unit || 'quintal', quality: dto.quality,
-        priceMechanism: dto.priceMechanism, fixedPrice: dto.fixedPrice, templateId: dto.templateId,
-        deliveryStart: dto.deliveryStart ? new Date(dto.deliveryStart) : null,
-        deliveryEnd: dto.deliveryEnd ? new Date(dto.deliveryEnd) : null,
-        content: dto.content, contentHash, region: contractRegion, woreda: contractWoreda,
-        createdById: actor.sub, status: 'DRAFT',
-        parties: { create: dto.parties.map((p) => ({ role: 'FARMER', farmerId: p.farmerId })) },
-        versions: { create: [{ version: 1, content: dto.content, hash: contentHash, createdById: actor.sub }] },
-      },
-      include: { parties: true, versions: true },
-    });
+      const created = await tx.contract.create({
+        data: {
+          contractNo, commodity: dto.commodity, quantity: dto.quantity,
+          unit: dto.unit || 'quintal', quality: dto.quality,
+          priceMechanism: dto.priceMechanism, fixedPrice: dto.fixedPrice, templateId: dto.templateId,
+          deliveryStart: dto.deliveryStart ? new Date(dto.deliveryStart) : null,
+          deliveryEnd: dto.deliveryEnd ? new Date(dto.deliveryEnd) : null,
+          content: dto.content, contentHash, region: contractRegion, woreda: contractWoreda,
+          createdById: actor.sub, status: 'DRAFT',
+          parties: { create: dto.parties.map((p) => ({ role: 'FARMER', farmerId: p.farmerId })) },
+          versions: { create: [{ version: 1, content: dto.content, hash: contentHash, createdById: actor.sub }] },
+        },
+        include: { parties: true, versions: true },
+      });
       const locked = await tx.parcel.updateMany({
         where: { id: { in: dto.parcelIds }, farmerId: { in: farmerIds }, isLocked: false },
         data: { isLocked: true, contractId: created.id },
