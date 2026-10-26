@@ -143,8 +143,12 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
       }
     }
     if (step === 3) {
-      if (formData.unitPriceEtb <= 0) {
-        setError(t('wizard.invalidPrice', 'Unit purchase price must be greater than zero.'));
+      if (formData.pricingModel === 'FIXED' && formData.unitPriceEtb <= 0) {
+        setError(t('wizard.invalidPrice', 'Fixed unit purchase price must be greater than zero.'));
+        return false;
+      }
+      if (formData.pricingModel === 'FLOOR_PLUS_MARKET_PREMIUM' && formData.floorPriceEtb <= 0) {
+        setError(t('wizard.invalidFloorPrice', 'Floor price must be greater than zero for a floor-plus-market-premium contract.'));
         return false;
       }
     }
@@ -626,7 +630,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
               className="inline-flex items-center gap-1.5 px-6 py-2 text-xs font-semibold text-white bg-forest-800 hover:bg-forest-900 shadow-xs disabled:opacity-50"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{isSubmitting ? t('common.submitting', 'Submitting Agreement...') : t('wizard.createDraft', 'Submit Tripartite Contract')}</span>
+              <span>{isSubmitting ? t('common.submitting', 'Submitting Agreement...') : t('wizard.createDraft', 'Save Draft')}</span>
             </button>
           )}
         </div>
