@@ -36,6 +36,7 @@ describe('ContractsService access control', () => {
 
   beforeEach(() => {
     prisma = {
+      contractReviewAction: { create: jest.fn().mockResolvedValue({ id: 'review-action-1' }) },
       contract: {
         findUnique: jest.fn().mockImplementation(async () => JSON.parse(JSON.stringify(contract))),
         findMany: jest.fn().mockResolvedValue([contract]),
@@ -324,4 +325,39 @@ describe('ContractsService access control', () => {
       parties: [{ role: 'FARMER', farmerId: 'farmer-record-1' }],
     } as any, { sub: 'cooperative-owner', role: Role.COOPERATIVE })).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.contract.create).not.toHaveBeenCalled();
-  });});
+  });
+
+  it('limits the WBoA review queue to the reviewer region and woreda', async () => {
+    await service.listReviewQueue({
+      sub: 'wboa-reviewer', role: Role.WBOA_OFFICER, adminLevel: AdminLevel.WOREDA,
+      region: 'Oromia', woreda: 'Ada',
+    });
+    expect(prisma.contract.findMany.mock.calls[0][0].where).toEqual({
+      status: 'PENDING_APPROVAL', region: 'Oromia', woreda: 'Ada',
+    });
+  });
+
+  it('requires a reason for return-for-correction decisions', async () => {
+    prisma.contract.findUnique.mockResolvedValue({ ...contract, status: 'PENDING_APPROVAL' });
+    await expect(service.approve(contract.id, 'RETURN_FOR_CORRECTION', '  ', {
+      sub: 'wboa-reviewer', role: Role.WBOA_OFFICER, adminLevel: AdminLevel.WOREDA,
+      region: 'Oromia', woreda: 'Ada',
+    })).rejects.toThrow('A reason is required');
+    expect(prisma.contract.update).not.toHaveBeenCalled();
+  });
+
+  it('records statutory return-for-correction decisions with jurisdiction metadata', async () => {
+    prisma.contract.findUnique.mockResolvedValue({ ...contract, status: 'PENDING_APPROVAL' });
+    prisma.contract.update.mockResolvedValue({ ...contract, status: 'RETURNED_FOR_CORRECTION' });
+    await service.approve(contract.id, 'RETURN_FOR_CORRECTION', 'Correct the delivery terms', {
+      sub: 'wboa-reviewer', role: Role.WBOA_OFFICER, adminLevel: AdminLevel.WOREDA,
+      region: 'Oromia', woreda: 'Ada',
+    });
+    expect(prisma.contractReviewAction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        action: 'RETURN_FOR_CORRECTION', fromStatus: 'PENDING_APPROVAL',
+        toStatus: 'RETURNED_FOR_CORRECTION', scopeRegion: 'Oromia', scopeWoreda: 'Ada',
+      }),
+    }));
+  });
+});
