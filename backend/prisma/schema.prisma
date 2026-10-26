@@ -257,6 +257,7 @@ model Contract {
   id             String         @id @default(uuid())
   contractNo     String         @unique
   templateId     String?
+  template        ContractTemplate? @relation(fields: [templateId], references: [id])
   commodity      String
   quantity       Float
   unit           String         @default("quintal")
@@ -283,6 +284,9 @@ model Contract {
   loans          Loan[]
   payments       Payment[]
   versions       ContractVersion[]
+  comments       ContractComment[]
+  annexes        ContractAnnex[]
+  changeAcceptances ContractChangeAcceptance[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -474,4 +478,75 @@ model AuditLog {
   @@index([actorId])
   @@index([createdAt])
   @@index([action])
+}
+
+
+enum ContractTemplateStatus {
+  DRAFT
+  APPROVED
+  RETIRED
+}
+
+model ContractTemplate {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  commodity   String?
+  language    String   @default("en")
+  version     Int      @default(1)
+  clauses     Json
+  status      ContractTemplateStatus @default(DRAFT)
+  createdById String
+  approvedById String?
+  approvedAt  DateTime?
+  contracts   Contract[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, commodity])
+}
+
+model ContractComment {
+  id         String   @id @default(uuid())
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  authorId   String
+  clauseKey  String?
+  body       String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([contractId, createdAt])
+  @@index([authorId])
+}
+
+model ContractAnnex {
+  id          String   @id @default(uuid())
+  contractId  String
+  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  content     Json?
+  fileName    String?
+  mimeType    String?
+  storageUrl  String?
+  checksum    String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([contractId, createdAt])
+}
+
+model ContractChangeAcceptance {
+  id         String   @id @default(uuid())
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  version    Int
+  userId     String
+  accepted   Boolean
+  comment    String?
+  acceptedAt DateTime @default(now())
+
+  @@unique([contractId, version, userId])
+  @@index([userId, accepted])
 }
