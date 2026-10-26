@@ -213,10 +213,16 @@ export class ContractsService {
     if (!Array.isArray(requiredClauses)) throw new BadRequestException('Approved template clauses are malformed');
     const submitted = Array.isArray(content.clauses) ? content.clauses : [];
     const byKey = new Map(submitted.map((clause: any) => [clause?.key, clause]));
+    if (byKey.size !== submitted.length) throw new BadRequestException('Clause keys must be unique within a draft');
     for (const required of requiredClauses) {
       if (!required || typeof required.key !== 'string') throw new BadRequestException('Template contains an invalid clause definition');
       const current: any = byKey.get(required.key);
-      if (required.mandatory && !current) throw new BadRequestException(`Mandatory clause "${required.title || required.key}" cannot be removed`);
+      if (required.mandatory && (!current || (typeof current.text !== 'string' || !current.text.trim()))) {
+        throw new BadRequestException(`Mandatory clause "${required.title || required.key}" cannot be removed or left blank`);
+      }
+      if (required.editable === false && !current) {
+        throw new BadRequestException(`Locked clause "${required.title || required.key}" cannot be removed`);
+      }
       if (current && required.editable === false && current.text !== required.text) {
         throw new BadRequestException(`Clause "${required.title || required.key}" is locked by the approved template`);
       }
