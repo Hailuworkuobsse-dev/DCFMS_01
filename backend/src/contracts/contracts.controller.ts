@@ -47,7 +47,7 @@ export class ContractsController {
   }
 
   @Patch(':id/send-for-signature')
-  @Roles(Role.CONTRACTOR, Role.COOPERATIVE)
+  @Roles(Role.CONTRACTOR)
   sendForSignature(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.sendForSignatures(id, user);
   }
@@ -78,7 +78,7 @@ export class ContractsController {
   }
 
   @Patch(':id/submit-approval')
-  @Roles(Role.CONTRACTOR, Role.COOPERATIVE)
+  @Roles(Role.CONTRACTOR)
   submitForApproval(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.submitForApproval(id, user);
   }
