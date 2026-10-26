@@ -43,6 +43,10 @@ describe('ContractsService access control', () => {
         update: jest.fn(),
       },
       contractor: { findUnique: jest.fn() },
+      contractParty: { findMany: jest.fn().mockResolvedValue([
+        { role: 'FARMER', farmer: { userId: 'farmer-owner' } },
+        { role: 'FARMER', farmer: { userId: 'farmer-two' } },
+      ]) },
       cooperative: { findUnique: jest.fn() },
       farmer: { findMany: jest.fn().mockResolvedValue([{ id: 'farmer-record-1', user: { region: 'Oromia', woreda: 'Ada' } }]) },
       parcel: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
@@ -163,6 +167,17 @@ describe('ContractsService access control', () => {
       region: 'Oromia', woreda: 'Different Woreda',
     })).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.contract.update).not.toHaveBeenCalled();
+  });
+
+  it('creates pending signatures for the producer parties and the authenticated contractor', async () => {
+    prisma.contract.update.mockResolvedValue({ id: contract.id, status: 'PENDING_SIGNATURES' });
+    await service.sendForSignatures(contract.id, { sub: 'contractor-owner', role: Role.CONTRACTOR });
+    const updateArgs = prisma.contract.update.mock.calls[0][0];
+    expect(updateArgs.data.signatures.create).toEqual([
+      { signerId: 'farmer-owner', role: 'FARMER', status: 'PENDING' },
+      { signerId: 'farmer-two', role: 'FARMER', status: 'PENDING' },
+      { signerId: 'contractor-owner', role: 'CONTRACTOR', status: 'PENDING' },
+    ]);
   });
 
   it('does not allow an unrelated contractor to submit another party contract for signature', async () => {
