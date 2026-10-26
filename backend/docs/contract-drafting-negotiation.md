@@ -46,3 +46,31 @@ Annex binary uploads and object-storage integration are not implemented here. An
 ### Production integration gates
 
 The code now has a configurable SMS HTTP adapter, but a real provider account, endpoint contract, credentials, sender registration, delivery receipts, rate limits and provider-specific request/response mapping must be configured and tested in the target environment. No SMS provider credentials are included in the repository. FaydaPass cryptographic verification remains disabled. Signature evidence is application-level tamper-evidence, not a qualified digital-signature certificate or legal opinion. Validate statutory routing and signature requirements with the relevant Ethiopian authorities before production use.
+
+
+## Phase 4 — lifecycle, integrity, amendments and closure (B5–B7)
+
+### Lifecycle and notifications
+- `GET /contracts/:id/events` returns the contract's append-only lifecycle event ledger. State changes, signing, version responses, negotiation comments, annex additions, milestones, amendments and closure append SHA-256 chained event records.
+- Contract parties receive in-app notifications for lifecycle events. `GET /contracts/notifications?unreadOnly=true` lists only the authenticated user's notifications; `PATCH /contracts/notifications/:notificationId/read` marks one as read.
+- `PATCH /contracts/:id/start-execution` permits the contract creator to move a statutorily approved and integrity-verified contract into execution.
+- `GET/POST /contracts/:id/milestones` and `PATCH /contracts/:id/milestones/:milestoneId` manage required execution milestones, due dates, status, completion identity and evidence.
+
+### Integrity checks
+- `GET /contracts/:id/integrity` recomputes the live contract content hash, every saved version hash and previous-version link, annex checksums, and the chained lifecycle event hashes.
+- The Phase 4 migration adds `ContractVersion.previousHash` and backfills existing version links. Integrity checks block execution, amendment proposal and closure when checks fail.
+- Event hashes are application-level tamper evidence. They are not a substitute for database permissions, immutable/WORM storage, external timestamping, backups or independent audit retention.
+
+### Formal amendments and re-approval
+- `GET/POST /contracts/:id/amendments` lists or proposes an amendment with a base version, structured proposed content and mandatory reason.
+- `PATCH /contracts/:id/amendments/:amendmentId/submit` submits the amendment for statutory review.
+- `PATCH /contracts/:id/amendments/:amendmentId/review` allows a scoped statutory reviewer to approve or reject it; rejection requires a reason.
+- Approval applies a new version, clears the prior statutory approval, and returns the contract to `DRAFT`. Every party must accept the new version, all required signatories must sign again, and the contract must go through statutory approval again.
+
+### Formal closure
+- `POST /contracts/:id/closure` records a formal fulfilment closure, final content hash, notes and optional evidence; it requires execution status, a successful integrity check and every required milestone marked complete.
+- Closure advances the contract to `COMPLETED` and releases its parcel locks. `GET /contracts/:id/closure` retrieves the closure record.
+
+### Phase 4 deployment notes
+- The migration is additive and depends on the existing DCFMS schema and Phase 2/3 migrations being initialized and applied in order. A clean database still requires a complete baseline migration.
+- The frontend lifecycle panel is embedded in contract detail. Backend tests, Prisma schema validation/client generation, migration application, frontend lint and build still must run in CI or the deployment environment before merge.
