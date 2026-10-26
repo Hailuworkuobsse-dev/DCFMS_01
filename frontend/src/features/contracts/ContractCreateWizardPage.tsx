@@ -376,6 +376,11 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
               </div>
 
               <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Minimum Grain Purity (%)</label>
+                <input type="number" min="0" max="100" step="0.1" value={formData.minPurityPercent} onChange={(e) => setFormData({ ...formData, minPurityPercent: Number(e.target.value) })} className="w-full text-xs bg-white border border-stone-300 px-3 py-2 font-mono text-stone-800 focus:outline-none focus:border-stone-900" />
+              </div>
+
+              <div>
                 <label className="block text-xs font-semibold text-stone-700 mb-1">
                   Delivery Destination
                 </label>
