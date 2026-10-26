@@ -277,8 +277,9 @@ export class ContractsService {
   }
 
   async addAnnex(id: string, dto: { title: string; description?: string; content?: Record<string, any>; fileName?: string; mimeType?: string; storageUrl?: string }, actor: JwtUser) {
-    const contract = await this.getEditableContract(id, actor);
+    const contract = await this.findOne(id, actor);
     await this.assertNegotiationParty(contract, actor);
+    if (contract.status !== 'DRAFT') throw new BadRequestException('Annexes can only be changed while the contract is a draft');
     if (!dto.title.trim()) throw new BadRequestException('Annex title is required');
     if (dto.storageUrl && !dto.storageUrl.startsWith('https://')) throw new BadRequestException('Annex links must use HTTPS');
     const checksum = createHash('sha256').update(canonicalJson({
@@ -336,7 +337,7 @@ export class ContractsService {
   async findOne(id: string, actor: JwtUser) {
     const contract = await this.prisma.contract.findUnique({
       where: { id },
-      include: { parties: { include: { farmer: { select: { id: true, userId: true, cooperativeId: true, user: { select: { id: true, region: true, zone: true, woreda: true, kebele: true } }, cooperative: { select: { userId: true } } } } } },
+      include: { parties: { include: { farmer: { select: { id: true, userId: true, cooperativeId: true, user: { select: { id: true, fullName: true, region: true, zone: true, woreda: true, kebele: true } }, cooperative: { select: { userId: true } } } } } },
         signatures: true, versions: { orderBy: { version: 'desc' } }, payments: true, loans: true, vouchers: true },
     });
     // Return 404 for both missing and unauthorized records to avoid ID enumeration.
@@ -502,6 +503,18 @@ export class ContractsService {
     });
     if (parties.some((party) => !party.farmer?.userId)) {
       throw new BadRequestException('Every producer party must have a registered farmer account before signing');
+    }
+    const latestVersion = Math.max(0, ...(contract.versions || []).map((version: any) => Number(version.version)));
+    if (!latestVersion) throw new BadRequestException('The draft must have a saved version before signature submission');
+    const acceptances = await this.prisma.contractChangeAcceptance.findMany({
+      where: { contractId: id, version: latestVersion, accepted: true },
+      select: { userId: true },
+    });
+    const acceptedUserIds = new Set(acceptances.map((acceptance: any) => acceptance.userId));
+    const requiredUserIds = [...new Set([...parties.map((party) => party.farmer!.userId), actor.sub])];
+    const missingAcceptances = requiredUserIds.filter((userId) => !acceptedUserIds.has(userId));
+    if (missingAcceptances.length) {
+      throw new BadRequestException('Every contracting party must accept the latest draft version before it can be sent for signature');
     }
 
     return this.prisma.contract.update({
