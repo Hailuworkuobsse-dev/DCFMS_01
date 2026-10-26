@@ -27,6 +27,12 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkedDemand, setLinkedDemand] = useState<LinkageRequest | null>(null);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [templateId, setTemplateId] = useState('');
+  const [partyQuery, setPartyQuery] = useState('');
+  const [partyResults, setPartyResults] = useState<any[]>([]);
+  const [selectedProducer, setSelectedProducer] = useState<any | null>(null);
+  const [isSearchingParties, setIsSearchingParties] = useState(false);
 
   useEffect(() => {
     const linkageId = new URLSearchParams(window.location.search).get('linkageId');
@@ -55,6 +61,30 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
     });
     return () => { cancelled = true; };
   }, [t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.contracts.templates().then(({ templates: approved }) => {
+      if (!cancelled) setTemplates(approved);
+    }).catch((err) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load approved contract templates.');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const searchProducers = async () => {
+    setIsSearchingParties(true);
+    setError(null);
+    try {
+      const result = await api.contracts.lookupParties(partyQuery);
+      setPartyResults(result.parties);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to search the verified producer directory.');
+      setPartyResults([]);
+    } finally {
+      setIsSearchingParties(false);
+    }
+  };
 
   // Form State
   const [formData, setFormData] = useState({
@@ -95,6 +125,10 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
   const validateStep = (step: number): boolean => {
     setError(null);
     if (step === 1) {
+      if (!templateId) {
+        setError(t('wizard.templateRequired', 'Select an approved contract template before drafting.'));
+        return false;
+      }
       if (!formData.commodity || formData.quantityKg <= 0 || formData.landAreaHectares <= 0) {
         setError(t('wizard.invalidCommodity', 'Please specify valid commodity, quantity, and land area.'));
         return false;
@@ -136,6 +170,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
         commodity: formData.commodity,
         quantity: Number(formData.quantityKg) / 100,
         unit: 'quintal',
+        templateId,
         quality: `Variety: ${formData.variety}; max moisture: ${Number(formData.maxMoisturePercent)}%; minimum purity: ${Number(formData.minPurityPercent)}%`,
         priceMechanism: formData.pricingModel === 'FIXED' ? 'FIXED' : 'MARKET',
         fixedPrice: formData.pricingModel === 'FIXED' ? Number(formData.unitPriceEtb) : undefined,
@@ -145,6 +180,8 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
         woreda: formData.woreda || undefined,
         content: {
           title: `${formData.commodity} Contract Farming Agreement`,
+          templateTitle: templates.find((template) => template.id === templateId)?.title,
+          clauses: templates.find((template) => template.id === templateId)?.clauses || [],
           variety: formData.variety,
           landAreaHectares: Number(formData.landAreaHectares),
           qualitySpecs: {
@@ -256,6 +293,16 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Approved contract template</label>
+                <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} className="w-full text-xs bg-white border border-stone-300 px-3 py-2 text-stone-800">
+                  <option value="">Select an approved template…</option>
+                  {templates.filter((template) => !template.commodity || template.commodity === formData.commodity).map((template) => (
+                    <option key={template.id} value={template.id}>{template.title} · v{template.version} · {template.language.toUpperCase()}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-stone-500">Only templates approved by the system administrator are available. Mandatory and locked clauses are validated again by the backend.</p>
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-700 mb-1">
                   Crop Commodity
@@ -358,22 +405,28 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Registered producer record ID
-                </label>
-                <input
-                  type="text"
-                  required
-                  autoComplete="off"
-                  value={formData.farmerRecordId}
-                  onChange={(e) => setFormData({ ...formData, farmerRecordId: e.target.value })}
-                  placeholder="Enter the producer record ID from the registry"
-                  aria-describedby="producer-record-help"
-                  className="w-full text-xs bg-white border border-stone-300 px-3 py-2 font-mono text-stone-800 focus:outline-none focus:border-stone-900"
-                />
-                <p id="producer-record-help" className="mt-1 text-xs text-stone-500">
-                  Use a registered producer record ID. Names, phone numbers, and Fayda IDs are not identity keys and are not submitted as party identity.
-                </p>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Search verified producer directory</label>
+                <div className="flex gap-2">
+                  <input type="search" autoComplete="off" value={partyQuery} onChange={(e) => setPartyQuery(e.target.value)} placeholder="Search by registered farmer name or phone" className="min-w-0 flex-1 text-xs bg-white border border-stone-300 px-3 py-2" />
+                  <button type="button" disabled={isSearchingParties || partyQuery.trim().length < 2} onClick={() => void searchProducers()} className="rounded bg-stone-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{isSearchingParties ? 'Searching…' : 'Search'}</button>
+                </div>
+                {partyResults.length > 0 && (
+                  <div className="mt-2 divide-y border border-stone-200 rounded-lg">
+                    {partyResults.map((party) => (
+                      <button key={party.id} type="button" onClick={() => {
+                        setSelectedProducer(party);
+                        setFormData((current) => ({ ...current, farmerRecordId: party.id, region: party.user.region || '', woreda: party.user.woreda || '', kebele: party.user.kebele || '' }));
+                        setPartyResults([]);
+                      }} className="block w-full p-3 text-left hover:bg-stone-50">
+                        <span className="block text-xs font-semibold text-stone-900">{party.user.fullName}</span>
+                        <span className="block mt-1 text-xs text-stone-600">{party.user.region} · {party.user.woreda} · {party.user.kebele || 'Kebele not recorded'}</span>
+                        <span className="block mt-1 text-[11px] text-stone-500">{party.parcels.length} available parcel(s) · {party.parcels.reduce((sum: number, parcel: any) => sum + Number(parcel.sizeHa || 0), 0).toFixed(2)} ha available</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedProducer && <div className="mt-3 rounded border border-forest-200 bg-forest-50 p-3 text-xs text-forest-900" role="status"><strong>Selected verified producer:</strong> {selectedProducer.user.fullName} · Record {selectedProducer.id} <button type="button" className="ml-2 underline" onClick={() => { setSelectedProducer(null); setFormData((current) => ({ ...current, farmerRecordId: '', region: '', woreda: '', kebele: '' })); }}>Change</button></div>}
+                <p className="mt-1 text-xs text-stone-500">The backend only returns active registered producers with available parcels. The selected registry record ID—not the search text—is submitted.</p>
               </div>
 
               <div>
@@ -497,7 +550,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
                 </div>
                 <div className="flex justify-between">
                   <span className="text-stone-500">Producer:</span>
-                  <span className="font-semibold text-stone-900">{formData.farmerRecordId || 'Producer not selected'}</span>
+                  <span className="font-semibold text-stone-900">{selectedProducer ? `${selectedProducer.user.fullName} · ${formData.farmerRecordId}` : 'Producer not selected'}</span>
                 </div>
               </div>
 
