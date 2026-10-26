@@ -37,6 +37,11 @@ describe('ContractsService access control', () => {
   beforeEach(() => {
     prisma = {
       contractReviewAction: { create: jest.fn().mockResolvedValue({ id: 'review-action-1' }) },
+      contractEvent: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'event-1' }) },
+      contractNotification: { createMany: jest.fn().mockResolvedValue({ count: 1 }), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 1 }), findFirst: jest.fn(), findUnique: jest.fn() },
+      contractMilestone: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'milestone-1', title: 'Deliver inputs', status: 'PENDING' }), update: jest.fn().mockResolvedValue({ id: 'milestone-1', status: 'COMPLETED' }) },
+      contractAmendment: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'amendment-1', amendmentNo: 1 }), update: jest.fn().mockResolvedValue({ id: 'amendment-1' }) },
+      contractClosure: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ id: 'closure-1' }) },
       contract: {
         findUnique: jest.fn().mockImplementation(async () => JSON.parse(JSON.stringify(contract))),
         findMany: jest.fn().mockResolvedValue([contract]),
