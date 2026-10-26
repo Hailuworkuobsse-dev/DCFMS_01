@@ -45,13 +45,13 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
       setAcceptances(acceptanceResult.acceptances);
       const latest = versionResult.versions[versionResult.versions.length - 1];
       setContentText(JSON.stringify(latest?.content || initialContent || {}, null, 2));
-      if (versionResult.versions.length > 1 && !olderVersion) setOlderVersion(String(versionResult.versions[versionResult.versions.length - 2].version));
+      if (versionResult.versions.length > 1) setOlderVersion((current) => current || String(versionResult.versions[versionResult.versions.length - 2].version));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load negotiation history.');
     } finally {
       setIsLoading(false);
     }
-  }, [contractId, initialContent, olderVersion]);
+  }, [contractId, initialContent]);
 
   useEffect(() => { void load(); }, [load]);
 
