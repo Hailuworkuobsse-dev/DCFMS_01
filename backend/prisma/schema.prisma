@@ -281,7 +281,6 @@ model Contract {
   rejectionNote  String?
   parties        ContractParty[]
   signatures     Signature[]
-  signatoryAuthorities ContractSignatoryAuthority[]
   reviewActions ContractReviewAction[]
   parcels        Parcel[]
   vouchers       Voucher[]
@@ -559,23 +558,6 @@ model ContractChangeAcceptance {
   @@index([userId, accepted])
 }
 
-
-model ContractSignatoryAuthority {
-  id              String   @id @default(uuid())
-  contractId      String
-  contract        Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  userId          String
-  authorityType   String
-  referenceNumber String
-  evidenceHash    String?
-  status          String   @default("PENDING") // PENDING | VERIFIED | REJECTED
-  verifiedById    String?
-  verifiedAt      DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  @@unique([contractId, userId])
-  @@index([userId, status])
-}
 
 model ContractReviewAction {
   id           String   @id @default(uuid())
