@@ -32,24 +32,6 @@ CREATE TABLE `SignatureEvidence` (
   CONSTRAINT `SignatureEvidence_signatureId_fkey` FOREIGN KEY (`signatureId`) REFERENCES `Signature`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-CREATE TABLE `ContractSignatoryAuthority` (
-  `id` VARCHAR(191) NOT NULL,
-  `contractId` VARCHAR(191) NOT NULL,
-  `userId` VARCHAR(191) NOT NULL,
-  `authorityType` VARCHAR(191) NOT NULL,
-  `referenceNumber` VARCHAR(191) NOT NULL,
-  `evidenceHash` VARCHAR(191) NULL,
-  `status` VARCHAR(191) NOT NULL DEFAULT 'PENDING',
-  `verifiedById` VARCHAR(191) NULL,
-  `verifiedAt` DATETIME(3) NULL,
-  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `updatedAt` DATETIME(3) NOT NULL,
-  UNIQUE INDEX `ContractSignatoryAuthority_contractId_userId_key` (`contractId`, `userId`),
-  INDEX `ContractSignatoryAuthority_userId_status_idx` (`userId`, `status`),
-  PRIMARY KEY (`id`),
-  CONSTRAINT `ContractSignatoryAuthority_contractId_fkey` FOREIGN KEY (`contractId`) REFERENCES `Contract`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
 CREATE TABLE `ContractReviewAction` (
   `id` VARCHAR(191) NOT NULL,
   `contractId` VARCHAR(191) NOT NULL,
