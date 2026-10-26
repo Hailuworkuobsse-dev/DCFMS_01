@@ -197,7 +197,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
           qualitySpecs: {
             maxMoisturePercent: Number(formData.maxMoisturePercent),
             minPurityPercent: Number(formData.minPurityPercent),
-            grade: 'Grade 1',
+            grade: '',
           },
           pricing: {
             pricingModel: formData.pricingModel,
