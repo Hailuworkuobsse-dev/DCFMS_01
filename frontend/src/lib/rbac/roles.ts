@@ -421,6 +421,17 @@ export const NAV_REGISTRY: NavItemConfig[] = [
     requiredAction: 'read',
   },
   {
+    id: 'nav-statutory-review',
+    labelKey: 'nav.statutoryReview',
+    route: '/statutory-review',
+    iconName: 'ClipboardCheck',
+    category: 'operations',
+    requiredAnyPermissions: [
+      'contract:approve:woreda', 'contract:approve:region',
+      'contract:approve:federal', 'contract:approve:all',
+    ],
+  },
+  {
     id: 'nav-linkage',
     labelKey: 'nav.linkage',
     route: '/linkage',
