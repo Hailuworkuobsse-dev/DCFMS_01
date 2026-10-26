@@ -20,8 +20,9 @@ export class ContractsController {
 
   @Post()
   @Roles(Role.CONTRACTOR, Role.COOPERATIVE)
-  create(@Body() dto: CreateContractDto, @CurrentUser() user: JwtUser) {
-    return this.contracts.create(dto, user);
+  async create(@Body() dto: CreateContractDto, @CurrentUser() user: JwtUser) {
+    const contract = await this.contracts.create(dto, user);
+    return { contract };
   }
 
   @Get()
@@ -32,7 +33,7 @@ export class ContractsController {
     @Query('region') region?: string,
     @Query('woreda') woreda?: string,
   ) {
-    return this.contracts.list(user, { status, commodity, region, woreda });
+    return this.contracts.list(user, { status, commodity, region, woreda }).then((contracts) => ({ contracts }));
   }
 
   @Get(':id')
@@ -42,8 +43,7 @@ export class ContractsController {
 
   @Get(':id/integrity')
   async integrity(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    await this.contracts.findOne(id, user);
-    return this.contracts.verifyIntegrity(id);
+    return this.contracts.verifyIntegrity(id, user);
   }
 
   @Patch(':id/send-for-signature')
