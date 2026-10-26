@@ -813,6 +813,7 @@ export class ContractsService {
     const contract = await this.findOne(id, actor);
     if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) throw new ForbiddenException('Only the contract creator may propose an amendment');
     if (!['SIGNED', 'APPROVED', 'IN_EXECUTION'].includes(contract.status)) throw new BadRequestException('Amendments require a signed or approved contract');
+    if (!dto.proposedContent || typeof dto.proposedContent !== 'object' || Array.isArray(dto.proposedContent)) throw new BadRequestException('Amendment content must be a structured object');
     const latestVersion = Math.max(0, ...(contract.versions || []).map((v: any) => Number(v.version)));
     if (dto.baseVersion !== latestVersion) throw new BadRequestException('The amendment base version is stale; reload the latest contract version');
     const reason = dto.reason?.trim();
@@ -850,6 +851,7 @@ export class ContractsService {
 
   async reviewAmendment(id: string, amendmentId: string, decision: 'APPROVE'|'REJECT', note: string | undefined, actor: JwtUser) {
     if (!APPROVER_ROLES.includes(actor.role as Role)) throw new ForbiddenException('Only statutory reviewers may review amendments');
+    if (decision !== 'APPROVE' && decision !== 'REJECT') throw new BadRequestException('Unsupported amendment review decision');
     if (decision === 'REJECT' && !note?.trim()) throw new BadRequestException('A reason is required when rejecting an amendment');
     const contract = await this.findOne(id, actor);
     if (actor.role === Role.WBOA_OFFICER && (!actor.region || !actor.woreda || contract.region !== actor.region || contract.woreda !== actor.woreda)) throw new ForbiddenException('Out of WBoA review scope');
@@ -930,7 +932,7 @@ export class ContractsService {
       return {
         version: version.version, storedHash: version.hash, recomputedHash: computed,
         contentIntact: version.hash === computed,
-        previousHashIntact: !version.previousHash || !previous || version.previousHash === previous.hash,
+        previousHashIntact: previous ? version.previousHash === previous.hash : !version.previousHash,
       };
     });
     const latestVersion = versions.length ? versions[versions.length - 1] : null;
