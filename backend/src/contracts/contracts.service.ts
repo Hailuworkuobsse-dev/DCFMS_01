@@ -74,8 +74,15 @@ export class ContractsService {
 
     const farmerIds = [...new Set(dto.parties.map((p) => p.farmerId).filter((id): id is string => Boolean(id)))];
     if (farmerIds.length) {
-      const existing = await this.prisma.farmer.findMany({ where: { id: { in: farmerIds } }, select: { id: true } });
+      const existing = await this.prisma.farmer.findMany({ where: { id: { in: farmerIds } }, select: { id: true, user: { select: { region: true, woreda: true } } } });
       if (existing.length !== farmerIds.length) throw new BadRequestException('One or more producer records do not exist');
+      const regions = new Set(existing.map((farmer: any) => farmer.user?.region).filter(Boolean));
+      const woredas = new Set(existing.map((farmer: any) => farmer.user?.woreda).filter(Boolean));
+      if (regions.size > 1 || woredas.size > 1) throw new BadRequestException('A contract cannot mix producers from different regional or woreda jurisdictions');
+      const producerRegion = existing[0]?.user?.region;
+      const producerWoreda = existing[0]?.user?.woreda;
+      if (dto.region && producerRegion && dto.region !== producerRegion) throw new ForbiddenException('Contract region must match the selected producer');
+      if (dto.woreda && producerWoreda && dto.woreda !== producerWoreda) throw new ForbiddenException('Contract woreda must match the selected producer');
     }
     if (dto.parcelIds?.length) {
       const parcels = await this.prisma.parcel.findMany({
@@ -148,6 +155,7 @@ export class ContractsService {
 
   private applyActorScope(where: Prisma.ContractWhereInput, actor: JwtUser) {
     if (actor.role === Role.SYSTEM_ADMIN || actor.role === Role.AUDITOR) return;
+    if (actor.adminLevel === AdminLevel.FEDERAL && [Role.MOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER].includes(actor.role as Role)) return;
     if (actor.adminLevel === AdminLevel.REGIONAL) {
       if (!actor.region) { where.id = '__no_scope__'; return; }
       where.region = actor.region;
@@ -196,6 +204,7 @@ export class ContractsService {
 
   private async canReadContract(contract: any, actor: JwtUser): Promise<boolean> {
     if (actor.role === Role.SYSTEM_ADMIN || actor.role === Role.AUDITOR) return true;
+    if (actor.adminLevel === AdminLevel.FEDERAL && [Role.MOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER].includes(actor.role as Role)) return true;
     if (actor.adminLevel === AdminLevel.REGIONAL) return Boolean(actor.region && contract.region === actor.region);
     if (actor.adminLevel === AdminLevel.WOREDA) return Boolean(actor.woreda && contract.woreda === actor.woreda &&
       (!actor.region || !contract.region || actor.region === contract.region));
