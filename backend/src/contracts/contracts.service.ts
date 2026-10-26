@@ -125,8 +125,10 @@ export class ContractsService {
     const where: Prisma.ContractWhereInput = { status: filter.status, commodity: filter.commodity };
     this.applyActorScope(where, actor);
     // Caller-provided scope filters may narrow results, never widen their authority.
-    if (filter.region) where.region = filter.region;
-    if (filter.woreda) where.woreda = filter.woreda;
+    const requestedScope: Prisma.ContractWhereInput[] = [];
+    if (filter.region) requestedScope.push({ region: filter.region });
+    if (filter.woreda) requestedScope.push({ woreda: filter.woreda });
+    if (requestedScope.length) where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), ...requestedScope];
     return this.prisma.contract.findMany({
       where, orderBy: { createdAt: 'desc' }, take: 200,
       include: { parties: true, signatures: { select: { role: true, status: true, signerId: true } } },
@@ -136,7 +138,7 @@ export class ContractsService {
   async findOne(id: string, actor: JwtUser) {
     const contract = await this.prisma.contract.findUnique({
       where: { id },
-      include: { parties: { include: { farmer: { include: { cooperative: true } } } },
+      include: { parties: { include: { farmer: { include: { user: true, cooperative: true } } } },
         signatures: true, versions: { orderBy: { version: 'desc' } }, payments: true, loans: true, vouchers: true },
     });
     // Return 404 for both missing and unauthorized records to avoid ID enumeration.
@@ -258,6 +260,9 @@ export class ContractsService {
 
   async submitForApproval(id: string, actor: JwtUser) {
     const contract = await this.findOne(id, actor);
+    if (contract.createdById !== actor.sub || ![Role.CONTRACTOR, Role.COOPERATIVE].includes(actor.role as Role)) {
+      throw new ForbiddenException('Only the contract creator may submit it for approval');
+    }
     if (contract.status !== 'SIGNED') {
       throw new BadRequestException('Contract must be fully signed');
     }
