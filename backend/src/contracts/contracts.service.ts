@@ -236,11 +236,13 @@ export class ContractsService {
     }
 
     if (actor.role === Role.COOPERATIVE) {
-      const memberIds = new Set((contract.parties || [])
-        .filter((party: any) => party.farmer?.cooperative?.userId === actor.sub)
-        .map((party: any) => party.farmerId));
+      const memberParties = (contract.parties || []).filter((party: any) => party.farmer?.cooperative?.userId === actor.sub);
+      const memberIds = new Set(memberParties.map((party: any) => party.farmerId));
+      const memberUserIds = new Set(memberParties.map((party: any) => party.farmer?.userId));
       contract.loans = (contract.loans || []).filter((loan: any) => memberIds.has(loan.farmerId));
       contract.vouchers = (contract.vouchers || []).filter((voucher: any) => memberIds.has(voucher.farmerId));
+      contract.payments = (contract.payments || []).filter((payment: any) =>
+        memberUserIds.has(payment.payerId) || memberUserIds.has(payment.payeeId));
       return;
     }
 
