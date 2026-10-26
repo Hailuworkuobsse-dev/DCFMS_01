@@ -317,11 +317,15 @@ export class ContractsService {
       data: {
         status: 'PENDING_SIGNATURES',
         signatures: {
-          create: parties.map((p) => ({
-            signerId: p.farmer?.userId ?? actor.sub,
-            role: p.role,
-            status: SignatureStatus.PENDING,
-          })),
+          create: [
+            ...parties.map((p) => ({
+              signerId: p.farmer?.userId as string,
+              role: p.role,
+              status: SignatureStatus.PENDING,
+            })),
+            // The authenticated contractor is a legal party and must sign too.
+            { signerId: actor.sub, role: 'CONTRACTOR', status: SignatureStatus.PENDING },
+          ],
         },
       },
       include: { signatures: true },
