@@ -107,6 +107,74 @@ export const apiClient = {
   },
 };
 
+function normalizeContract(raw: any): Contract {
+  const content = raw?.content && typeof raw.content === 'object' ? raw.content : {};
+  const firstParty = raw?.parties?.[0];
+  const farmer = firstParty?.farmer;
+  const quantityQt = Number(raw?.quantity ?? raw?.expectedQuantityQt ?? 0);
+  const pricePerQt = Number(raw?.fixedPrice ?? raw?.agreedPriceEtbPerQt ?? 0);
+  const signatures = Array.isArray(raw?.signatures) ? raw.signatures : [];
+  const farmerSignature = signatures.find((signature: any) => signature.role === 'FARMER' && signature.status === 'SIGNED');
+  const contractorSignature = signatures.find((signature: any) => signature.role === 'CONTRACTOR' && signature.status === 'SIGNED');
+  return {
+    ...raw,
+    contractNumber: raw?.contractNumber ?? raw?.contractNo ?? raw?.id,
+    title: raw?.title ?? content.title ?? `${raw?.commodity || 'Contract'} agreement`,
+    titleAm: raw?.titleAm ?? content.titleAm ?? '',
+    templateId: raw?.templateId ?? '',
+    version: raw?.versions?.length ? Math.max(...raw.versions.map((version: any) => Number(version.version))) : 1,
+    contractorOrgId: raw?.contractorOrgId ?? raw?.createdById ?? '',
+    contractorName: raw?.contractorName ?? raw?.createdBy?.fullName ?? 'Contracting organization',
+    producerId: raw?.producerId ?? firstParty?.farmerId ?? '',
+    producerName: raw?.producerName ?? farmer?.user?.fullName ?? 'Registered producer',
+    producerType: raw?.producerType ?? (farmer?.cooperativeId ? 'Cooperative' : 'Individual'),
+    producerFaydaId: raw?.producerFaydaId ?? farmer?.faydaFin,
+    commodity: raw?.commodity ?? content.commodity ?? '',
+    variety: raw?.variety ?? content.variety ?? '',
+    region: raw?.region ?? '',
+    woreda: raw?.woreda ?? '',
+    kebele: raw?.kebele ?? farmer?.user?.kebele ?? '',
+    landAreaHa: Number(raw?.landAreaHa ?? content.landAreaHectares ?? 0),
+    farmerCount: Number(raw?.farmerCount ?? raw?.parties?.length ?? 0),
+    expectedQuantityQt: quantityQt,
+    agreedPriceEtbPerQt: Number(raw?.agreedPriceEtbPerQt ?? pricePerQt),
+    floorPriceEtbPerQt: Number(raw?.floorPriceEtbPerQt ?? content.pricing?.floorPriceEtb ?? 0),
+    pricingFormula: raw?.pricingFormula ?? raw?.priceMechanism ?? '',
+    qualityGrade: raw?.qualityGrade ?? content.qualitySpecs?.grade ?? '',
+    deliveryWindowStart: raw?.deliveryWindowStart ?? raw?.deliveryStart ?? content.deliveryStartDate ?? '',
+    deliveryWindowEnd: raw?.deliveryWindowEnd ?? raw?.deliveryEnd ?? content.deliveryEndDate ?? '',
+    inputAdvanceObligations: raw?.inputAdvanceObligations ?? content.pricing?.inputAdvanceValueEtb?.toString() ?? '',
+    exportOriented: Boolean(raw?.exportOriented ?? false),
+    ecxVerified: Boolean(raw?.ecxVerified ?? false),
+    totalValueEtb: Number(raw?.totalValueEtb ?? content.pricing?.totalValueEtb ?? (quantityQt * pricePerQt)),
+    contractorOrgName: raw?.contractorOrgName ?? raw?.contractorName ?? raw?.createdBy?.fullName,
+    farmerName: raw?.farmerName ?? farmer?.user?.fullName,
+    farmerFaydaId: raw?.farmerFaydaId ?? farmer?.faydaFin,
+    quantityKg: Number(raw?.quantityKg ?? quantityQt * 100),
+    landAreaHectares: Number(raw?.landAreaHectares ?? content.landAreaHectares ?? 0),
+    unitPriceEtb: Number(raw?.unitPriceEtb ?? (pricePerQt / 100)),
+    floorPriceEtb: Number(raw?.floorPriceEtb ?? content.pricing?.floorPriceEtb ?? 0),
+    pricingModel: raw?.pricingModel ?? content.pricing?.pricingModel ?? raw?.priceMechanism,
+    deliveryStartDate: raw?.deliveryStartDate ?? raw?.deliveryStart ?? content.deliveryStartDate ?? '',
+    deliveryEndDate: raw?.deliveryEndDate ?? raw?.deliveryEnd ?? content.deliveryEndDate ?? '',
+    deliveryLocation: raw?.deliveryLocation ?? content.deliveryLocation ?? '',
+    qualitySpecs: raw?.qualitySpecs ?? content.qualitySpecs ?? {},
+    signatures: raw?.signatures && !Array.isArray(raw.signatures) ? raw.signatures : {
+      producerSignedAt: farmerSignature?.signedAt,
+      contractorSignedAt: contractorSignature?.signedAt,
+      farmer: farmerSignature ? { signedAt: farmerSignature.signedAt, method: farmerSignature.method } : undefined,
+      contractor: contractorSignature ? { signedAt: contractorSignature.signedAt, method: contractorSignature.method } : undefined,
+    },
+    approvals: raw?.approvals ?? {
+      woredaApprovedBy: raw?.approvedById,
+      woredaApprovedAt: raw?.approvedAt,
+      woredaNotes: raw?.rejectionNote,
+    },
+    createdAt: raw?.createdAt ?? '',
+    updatedAt: raw?.updatedAt ?? raw?.createdAt ?? '',
+  } as Contract;
+}
+
 export const api = {
   auth: {
     login: (email: string, password: string) =>
@@ -135,8 +203,18 @@ export const api = {
       const queryStr = q.toString() ? `?${q.toString()}` : '';
       return apiClient.get<{ contracts: Contract[] }>(`/contracts${queryStr}`);
     },
-    get: (id: string) =>
-      apiClient.get<{
+    get: async (id: string) => {
+      const response = await apiClient.get<any>(`/contracts/${id}`);
+      const rawContract = response.contract ?? response;
+      return {
+        contract: normalizeContract(rawContract),
+        vouchers: response.vouchers ?? rawContract.vouchers ?? [],
+        loans: response.loans ?? rawContract.loans ?? [],
+        settlements: response.settlements ?? rawContract.payments ?? [],
+        monitoring: response.monitoring ?? [],
+        grievances: response.grievances ?? [],
+        auditLogs: response.auditLogs ?? [],
+      } as {
         contract: Contract;
         vouchers: InputVoucher[];
         loans: LoanApplication[];
@@ -144,25 +222,41 @@ export const api = {
         monitoring: MonitoringReport[];
         grievances: GrievanceCase[];
         auditLogs: AuditLogEntry[];
-      }>(`/contracts/${id}`),
+      };
+    },
     create: (data: any) => apiClient.post<{ contract: Contract }>('/contracts', data),
+    templates: (commodity?: string) => {
+      const query = commodity ? `?commodity=${encodeURIComponent(commodity)}` : '';
+      return apiClient.get<{ templates: any[] }>(`/contracts/templates${query}`);
+    },
+    lookupParties: (q: string) =>
+      apiClient.get<{ parties: any[] }>(`/contracts/party-lookup?q=${encodeURIComponent(q)}`),
+    saveDraft: (id: string, data: { content: Record<string, unknown>; expectedVersion: number; changeSummary?: string }) =>
+      apiClient.patch<{ contract: any; version: any }>(`/contracts/${id}/draft`, data),
+    comments: (id: string) => apiClient.get<{ comments: any[] }>(`/contracts/${id}/comments`),
+    addComment: (id: string, data: { body: string; clauseKey?: string }) =>
+      apiClient.post<any>(`/contracts/${id}/comments`, data),
+    annexes: (id: string) => apiClient.get<{ annexes: any[] }>(`/contracts/${id}/annexes`),
+    addAnnex: (id: string, data: { title: string; description?: string; content?: Record<string, unknown>; fileName?: string; mimeType?: string; storageUrl?: string }) =>
+      apiClient.post<any>(`/contracts/${id}/annexes`, data),
+    versions: (id: string) => apiClient.get<{ versions: any[] }>(`/contracts/${id}/versions`),
+    acceptChange: (id: string, data: { version: number; accepted: boolean; comment?: string }) =>
+      apiClient.post<any>(`/contracts/${id}/change-acceptances`, data),
+    changeAcceptances: (id: string) => apiClient.get<{ acceptances: any[] }>(`/contracts/${id}/change-acceptances`),
 requestOtp: (id: string) =>
-      apiClient.post<{ message?: string; devOtp?: string }>(`/contracts/${id}/request-otp`),
-    sign: (id: string, data: { faydaId: string; otpCode: string; consent: boolean }) =>
-      apiClient.post<{ contract: Contract }>(`/contracts/${id}/sign-otp`, {
-        // The backend identifies the signer via JWT; the Fayda ID is only
-        // validated on the mock API path (12 digits) — fallback covers
-        // non-farmer backend sessions, which have no Fayda FIN.
-        faydaId: data.faydaId || '000000000000',
-        otp: data.otpCode,
-        consent: data.consent,
+      apiClient.post<{ message?: string; deliveredVia?: string; devOtp?: string }>(`/contracts/${id}/sign/request-otp`),
+    sendForSignature: (id: string) => apiClient.patch<any>(`/contracts/${id}/send-for-signature`),
+    submitForApproval: (id: string) => apiClient.patch<any>(`/contracts/${id}/submit-approval`),
+    signatureEvidence: (id: string) => apiClient.get<{ evidence: any[] }>(`/contracts/${id}/signature-evidence`),
+    reviewQueue: () => apiClient.get<{ contracts: any[] }>('/contracts/review-queue'),
+    review: (id: string, data: { decision: 'APPROVE' | 'REJECT' | 'RETURN_FOR_CORRECTION'; note?: string }) =>
+      apiClient.patch<any>(`/contracts/${id}/approve`, data),
+    sign: (id: string, data: { faydaId?: string; otpCode: string; consent: boolean }) =>
+      apiClient.post<{ status: string; signatureHash: string }>(`/contracts/${id}/sign`, {
+        method: 'OTP',
+        otpCode: data.otpCode,
       }),
-    endorse: (id: string, data: { notes?: string }) =>
-      apiClient.post<{ contract: Contract }>(`/contracts/${id}/decision`, {
-        action: 'approve',
-        reason: 'Statutory compliance verified',
-        notes: data.notes,
-      }),
+    endorse: (id: string) => apiClient.patch<any>(`/contracts/${id}/submit-approval`),
   },
   linkages: {
     list: () => apiClient.get<{ linkages: LinkageRequest[]; competencyApps: any[] }>('/linkage'),

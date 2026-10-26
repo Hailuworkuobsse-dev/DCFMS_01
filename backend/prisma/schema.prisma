@@ -48,6 +48,7 @@ enum ContractStatus {
   COMPLETED
   ADJUSTED
   REJECTED
+  RETURNED_FOR_CORRECTION
   CANCELLED
 }
 
@@ -170,6 +171,7 @@ model OtpCode {
   purpose   String   @default("SIGN")
   expiresAt DateTime
   consumed  Boolean  @default(false)
+  attempts  Int      @default(0)
   createdAt DateTime @default(now())
 
   @@index([userId, purpose])
@@ -257,6 +259,7 @@ model Contract {
   id             String         @id @default(uuid())
   contractNo     String         @unique
   templateId     String?
+  template        ContractTemplate? @relation(fields: [templateId], references: [id])
   commodity      String
   quantity       Float
   unit           String         @default("quintal")
@@ -278,11 +281,15 @@ model Contract {
   rejectionNote  String?
   parties        ContractParty[]
   signatures     Signature[]
+  reviewActions ContractReviewAction[]
   parcels        Parcel[]
   vouchers       Voucher[]
   loans          Loan[]
   payments       Payment[]
   versions       ContractVersion[]
+  comments       ContractComment[]
+  annexes        ContractAnnex[]
+  changeAcceptances ContractChangeAcceptance[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -325,9 +332,13 @@ model Signature {
   method     SignatureMethod @default(OTP)
   status     SignatureStatus @default(PENDING)
   signatureHash String?
+  contentHashAtSigning String?
+  otpVerifiedAt DateTime?
+  authorityVerified Boolean @default(false)
   signedAt   DateTime?
   ipAddress  String?
   deviceInfo String?
+  evidence SignatureEvidence?
   createdAt  DateTime        @default(now())
 
   @@index([contractId])
@@ -474,4 +485,115 @@ model AuditLog {
   @@index([actorId])
   @@index([createdAt])
   @@index([action])
+}
+
+
+enum ContractTemplateStatus {
+  DRAFT
+  APPROVED
+  RETIRED
+}
+
+model ContractTemplate {
+  id          String   @id @default(uuid())
+  title       String
+  description String? @db.Text
+  commodity   String?
+  language    String   @default("en")
+  version     Int      @default(1)
+  clauses     Json
+  status      ContractTemplateStatus @default(DRAFT)
+  createdById String
+  approvedById String?
+  approvedAt  DateTime?
+  contracts   Contract[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, commodity])
+}
+
+model ContractComment {
+  id         String   @id @default(uuid())
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  authorId   String
+  clauseKey  String?
+  body       String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([contractId, createdAt])
+  @@index([authorId])
+}
+
+model ContractAnnex {
+  id          String   @id @default(uuid())
+  contractId  String
+  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  title       String
+  description String? @db.Text
+  content     Json?
+  fileName    String?
+  mimeType    String?
+  storageUrl  String?
+  checksum    String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([contractId, createdAt])
+}
+
+model ContractChangeAcceptance {
+  id         String   @id @default(uuid())
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  version    Int
+  userId     String
+  accepted   Boolean
+  comment    String? @db.Text
+  acceptedAt DateTime @default(now())
+
+  @@unique([contractId, version, userId])
+  @@index([userId, accepted])
+}
+
+
+model ContractReviewAction {
+  id           String   @id @default(uuid())
+  contractId   String
+  contract     Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  reviewerId   String
+  reviewerRole String
+  action       String // APPROVE | REJECT | RETURN_FOR_CORRECTION
+  note         String? @db.Text
+  fromStatus   String
+  toStatus     String
+  scopeRegion  String?
+  scopeWoreda  String?
+  createdAt    DateTime @default(now())
+  @@index([reviewerId, createdAt])
+  @@index([action, createdAt])
+}
+
+
+model SignatureEvidence {
+  id                 String    @id @default(uuid())
+  signatureId        String    @unique
+  signature          Signature @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  contractId         String
+  signerId           String
+  signerRole         String
+  method             SignatureMethod
+  contentHash        String
+  signatureHash      String   @unique
+  authorityBasis     String
+  authorityReference String?
+  otpVerifiedAt      DateTime?
+  signedAt           DateTime
+  ipAddress          String?
+  userAgent          String?  @db.Text
+  createdAt          DateTime @default(now())
+  @@index([contractId, signedAt])
+  @@index([signerId, signedAt])
 }

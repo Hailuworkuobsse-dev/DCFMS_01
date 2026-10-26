@@ -27,6 +27,13 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkedDemand, setLinkedDemand] = useState<LinkageRequest | null>(null);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [templateId, setTemplateId] = useState('');
+  const [partyQuery, setPartyQuery] = useState('');
+  const [partyResults, setPartyResults] = useState<any[]>([]);
+  const [selectedProducers, setSelectedProducers] = useState<any[]>([]);
+  const [selectedParcelIds, setSelectedParcelIds] = useState<string[]>([]);
+  const [isSearchingParties, setIsSearchingParties] = useState(false);
 
   useEffect(() => {
     const linkageId = new URLSearchParams(window.location.search).get('linkageId');
@@ -56,15 +63,39 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
     return () => { cancelled = true; };
   }, [t]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void api.contracts.templates().then(({ templates: approved }) => {
+      if (!cancelled) setTemplates(approved);
+    }).catch((err) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load approved contract templates.');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const searchProducers = async () => {
+    setIsSearchingParties(true);
+    setError(null);
+    try {
+      const result = await api.contracts.lookupParties(partyQuery);
+      setPartyResults(result.parties);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to search the verified producer directory.');
+      setPartyResults([]);
+    } finally {
+      setIsSearchingParties(false);
+    }
+  };
+
   // Form State
   const [formData, setFormData] = useState({
     // Step 1: Commodity
-    commodity: 'Durum Wheat',
-    variety: 'Kingbird 2024 certified',
-    quantityKg: 20000, // 200 Quintals
-    landAreaHectares: 8.5,
-    maxMoisturePercent: 12.5,
-    minPurityPercent: 98.0,
+    commodity: '',
+    variety: '',
+    quantityKg: 0,
+    landAreaHectares: 0,
+    maxMoisturePercent: 0,
+    minPurityPercent: 0,
     deliveryStartDate: '',
     deliveryEndDate: '',
     deliveryLocation: '',
@@ -77,38 +108,51 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
     contractorOrgName: '',
 
     // Step 3: Pricing & Escrow
-    pricingModel: 'FLOOR_PLUS_MARKET_PREMIUM' as 'FIXED' | 'FLOOR_PLUS_MARKET_PREMIUM',
-    unitPriceEtb: 52, // 5,200 ETB per Qtl
-    floorPriceEtb: 48,
-    marketPremiumPercent: 5,
-    inputAdvanceValueEtb: 150000,
-    escrowBank: 'Commercial Bank of Ethiopia (CBE)',
+    pricingModel: 'FIXED' as 'FIXED' | 'FLOOR_PLUS_MARKET_PREMIUM',
+    unitPriceEtb: 0,
+    floorPriceEtb: 0,
+    marketPremiumPercent: 0,
+    inputAdvanceValueEtb: 0,
+    escrowBank: '',
 
     // Step 4: Legal
-    arbitrationForum: 'Woreda Agriculture Office Conciliation Panel',
+    arbitrationForum: '',
     forceMajeureNoticeDays: 7,
     proclamationAccepted: false,
   });
 
+  const selectedParcelArea = selectedProducers.reduce((sum, producer) => sum + producer.parcels.filter((parcel: any) => selectedParcelIds.includes(parcel.id)).reduce((parcelSum: number, parcel: any) => parcelSum + Number(parcel.sizeHa || 0), 0), 0);
   const totalValue = formData.quantityKg * formData.unitPriceEtb;
 
   const validateStep = (step: number): boolean => {
     setError(null);
     if (step === 1) {
-      if (!formData.commodity || formData.quantityKg <= 0 || formData.landAreaHectares <= 0) {
-        setError(t('wizard.invalidCommodity', 'Please specify valid commodity, quantity, and land area.'));
+      if (!templateId) {
+        setError(t('wizard.templateRequired', 'Select an approved contract template before drafting.'));
+        return false;
+      }
+      if (!formData.commodity || formData.quantityKg <= 0) {
+        setError(t('wizard.invalidCommodity', 'Please specify a commodity and a positive quantity.'));
+        return false;
+      }
+      if (formData.maxMoisturePercent <= 0 || formData.maxMoisturePercent > 100 || formData.minPurityPercent <= 0 || formData.minPurityPercent > 100) {
+        setError('Enter valid moisture and purity percentages between greater than 0 and 100.');
         return false;
       }
     }
     if (step === 2) {
-      if (!formData.farmerRecordId.trim()) {
-        setError(t('wizard.invalidParties', 'Enter the registered producer record ID. Do not enter a name or national ID as a substitute.'));
+      if (selectedProducers.length === 0 || selectedParcelIds.length === 0 || selectedParcelArea <= 0 || selectedProducers.some((producer) => !producer.parcels.some((parcel: any) => selectedParcelIds.includes(parcel.id)))) {
+        setError(t('wizard.invalidParties', 'Select at least one verified producer and one available parcel.'));
         return false;
       }
     }
     if (step === 3) {
       if (formData.unitPriceEtb <= 0) {
-        setError(t('wizard.invalidPrice', 'Unit purchase price must be greater than zero.'));
+        setError(t('wizard.invalidPrice', 'Reference unit purchase price must be greater than zero.'));
+        return false;
+      }
+      if (formData.pricingModel === 'FLOOR_PLUS_MARKET_PREMIUM' && formData.floorPriceEtb <= 0) {
+        setError(t('wizard.invalidFloorPrice', 'Floor price must be greater than zero for a floor-plus-market-premium contract.'));
         return false;
       }
     }
@@ -136,6 +180,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
         commodity: formData.commodity,
         quantity: Number(formData.quantityKg) / 100,
         unit: 'quintal',
+        templateId,
         quality: `Variety: ${formData.variety}; max moisture: ${Number(formData.maxMoisturePercent)}%; minimum purity: ${Number(formData.minPurityPercent)}%`,
         priceMechanism: formData.pricingModel === 'FIXED' ? 'FIXED' : 'MARKET',
         fixedPrice: formData.pricingModel === 'FIXED' ? Number(formData.unitPriceEtb) : undefined,
@@ -145,12 +190,14 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
         woreda: formData.woreda || undefined,
         content: {
           title: `${formData.commodity} Contract Farming Agreement`,
+          templateTitle: templates.find((template) => template.id === templateId)?.title,
+          clauses: templates.find((template) => template.id === templateId)?.clauses || [],
           variety: formData.variety,
-          landAreaHectares: Number(formData.landAreaHectares),
+          landAreaHectares: selectedParcelArea,
           qualitySpecs: {
             maxMoisturePercent: Number(formData.maxMoisturePercent),
             minPurityPercent: Number(formData.minPurityPercent),
-            grade: 'Grade 1',
+            grade: '',
           },
           pricing: {
             pricingModel: formData.pricingModel,
@@ -166,7 +213,8 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
           proclamationAccepted: formData.proclamationAccepted,
           linkageId: linkedDemand?.id ?? null,
         },
-        parties: [{ role: 'FARMER', farmerId: formData.farmerRecordId.trim() }],
+        parties: selectedProducers.map((producer) => ({ role: 'FARMER', farmerId: producer.id })),
+        parcelIds: selectedParcelIds,
       };
 
       const res = await api.contracts.create(payload);
@@ -256,6 +304,16 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Approved contract template</label>
+                <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} className="w-full text-xs bg-white border border-stone-300 px-3 py-2 text-stone-800">
+                  <option value="">Select an approved template…</option>
+                  {templates.filter((template) => !template.commodity || template.commodity === formData.commodity).map((template) => (
+                    <option key={template.id} value={template.id}>{template.title} · v{template.version} · {template.language.toUpperCase()}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-stone-500">Only templates approved by the system administrator are available. Mandatory and locked clauses are validated again by the backend.</p>
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-stone-700 mb-1">
                   Crop Commodity
@@ -265,6 +323,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
                   onChange={(e) => setFormData({ ...formData, commodity: e.target.value })}
                   className="w-full text-xs bg-white border border-stone-300 px-3 py-2 text-stone-800 focus:outline-none focus:border-stone-900"
                 >
+                  <option value="">Select commodity…</option>
                   <option value="Durum Wheat">Durum Wheat (ስንዴ)</option>
                   <option value="Malt Barley">Malt Barley (ገብስ)</option>
                   <option value="Sesame Seed">Sesame Seed (ሰሊጥ)</option>
@@ -302,16 +361,9 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Cultivated Land Area (Hectares)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formData.landAreaHectares}
-                  onChange={(e) => setFormData({ ...formData, landAreaHectares: Number(e.target.value) })}
-                  className="w-full text-xs bg-white border border-stone-300 px-3 py-2 font-mono text-stone-800 focus:outline-none focus:border-stone-900"
-                />
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Cultivated land area</label>
+                <div className="w-full border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-xs text-stone-600">{selectedParcelArea.toFixed(2)} hectares</div>
+                <p className="mt-1 text-[11px] text-stone-500">Calculated from parcels selected in Step 2; it cannot be manually overridden.</p>
               </div>
 
               <div>
@@ -325,6 +377,11 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
                   onChange={(e) => setFormData({ ...formData, maxMoisturePercent: Number(e.target.value) })}
                   className="w-full text-xs bg-white border border-stone-300 px-3 py-2 font-mono text-stone-800 focus:outline-none focus:border-stone-900"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Minimum Grain Purity (%)</label>
+                <input type="number" min="0" max="100" step="0.1" value={formData.minPurityPercent} onChange={(e) => setFormData({ ...formData, minPurityPercent: Number(e.target.value) })} className="w-full text-xs bg-white border border-stone-300 px-3 py-2 font-mono text-stone-800 focus:outline-none focus:border-stone-900" />
               </div>
 
               <div>
@@ -358,22 +415,51 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Registered producer record ID
-                </label>
-                <input
-                  type="text"
-                  required
-                  autoComplete="off"
-                  value={formData.farmerRecordId}
-                  onChange={(e) => setFormData({ ...formData, farmerRecordId: e.target.value })}
-                  placeholder="Enter the producer record ID from the registry"
-                  aria-describedby="producer-record-help"
-                  className="w-full text-xs bg-white border border-stone-300 px-3 py-2 font-mono text-stone-800 focus:outline-none focus:border-stone-900"
-                />
-                <p id="producer-record-help" className="mt-1 text-xs text-stone-500">
-                  Use a registered producer record ID. Names, phone numbers, and Fayda IDs are not identity keys and are not submitted as party identity.
-                </p>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Search verified producer directory</label>
+                <div className="flex gap-2">
+                  <input type="search" autoComplete="off" value={partyQuery} onChange={(e) => setPartyQuery(e.target.value)} placeholder="Search by registered farmer name or phone" className="min-w-0 flex-1 text-xs bg-white border border-stone-300 px-3 py-2" />
+                  <button type="button" disabled={isSearchingParties || partyQuery.trim().length < 2} onClick={() => void searchProducers()} className="rounded bg-stone-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{isSearchingParties ? 'Searching…' : 'Search'}</button>
+                </div>
+                {partyResults.length > 0 && (
+                  <div className="mt-2 divide-y border border-stone-200 rounded-lg">
+                    {partyResults.map((party) => (
+                      <button key={party.id} type="button" onClick={() => {
+                        if (selectedProducers.some((selected) => selected.id === party.id)) return;
+                        if (selectedProducers.length && (selectedProducers[0].user.region !== party.user.region || selectedProducers[0].user.woreda !== party.user.woreda)) {
+                          setError('A single contract cannot combine producers from different regions or woredas.');
+                          return;
+                        }
+                        setSelectedProducers((current) => [...current, party]);
+                        setFormData((current) => ({ ...current, farmerRecordId: current.farmerRecordId || party.id, region: party.user.region || '', woreda: party.user.woreda || '', kebele: party.user.kebele || '' }));
+                        setPartyResults([]);
+                      }} disabled={selectedProducers.some((selected) => selected.id === party.id)} className="block w-full p-3 text-left hover:bg-stone-50 disabled:opacity-50">
+                        <span className="block text-xs font-semibold text-stone-900">{party.user.fullName}</span>
+                        <span className="block mt-1 text-xs text-stone-600">{party.user.region} · {party.user.woreda} · {party.user.kebele || 'Kebele not recorded'}</span>
+                        <span className="block mt-1 text-[11px] text-stone-500">{party.parcels.length} available parcel(s) · {party.parcels.reduce((sum: number, parcel: any) => sum + Number(parcel.sizeHa || 0), 0).toFixed(2)} ha available</span>
+                        <span className="mt-1 block text-[11px] font-semibold text-forest-800">{selectedProducers.some((selected) => selected.id === party.id) ? 'Already selected' : 'Add producer and choose parcels'}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedProducers.length > 0 && <div className="mt-3 space-y-3" role="status">
+                  <p className="text-xs font-semibold text-stone-900">Selected registered producers ({selectedProducers.length})</p>
+                  {selectedProducers.map((producer) => <div key={producer.id} className="rounded border border-forest-200 bg-forest-50 p-3">
+                    <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold text-forest-900">{producer.user.fullName}</p><p className="mt-1 text-[11px] text-forest-800">Record {producer.id} · {producer.user.region} · {producer.user.woreda}</p></div>
+                    <button type="button" className="text-xs underline" onClick={() => {
+                      setSelectedProducers((current) => current.filter((item) => item.id !== producer.id));
+                      setSelectedParcelIds((current) => current.filter((parcelId) => !producer.parcels.some((parcel: any) => parcel.id === parcelId)));
+                      setFormData((current) => ({ ...current, farmerRecordId: selectedProducers.filter((item) => item.id !== producer.id)[0]?.id || '', region: selectedProducers.filter((item) => item.id !== producer.id)[0]?.user.region || '', woreda: selectedProducers.filter((item) => item.id !== producer.id)[0]?.user.woreda || '', kebele: selectedProducers.filter((item) => item.id !== producer.id)[0]?.user.kebele || '' }));
+                    }}>Remove</button></div>
+                    <p className="mt-3 text-[11px] font-semibold text-stone-700">Choose parcel(s) for this agreement</p>
+                    <div className="mt-2 space-y-2">{producer.parcels.map((parcel: any) => <label key={parcel.id} className="flex items-start gap-2 text-xs text-stone-700">
+                      <input type="checkbox" checked={selectedParcelIds.includes(parcel.id)} onChange={(event) => {
+                        setSelectedParcelIds((current) => event.target.checked ? [...current, parcel.id] : current.filter((id) => id !== parcel.id));
+                      }} />
+                      <span>{parcel.name} · {parcel.sizeHa} ha{parcel.crop ? ` · ${parcel.crop}` : ''}{parcel.season ? ` · ${parcel.season}` : ''}</span>
+                    </label>)}</div>
+                  </div>)}
+                </div>}
+                <p className="mt-1 text-xs text-stone-500">Only active registered producers with available parcels are returned. Every selected producer and parcel is revalidated by the backend before the draft is created.</p>
               </div>
 
               <div>
@@ -497,7 +583,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
                 </div>
                 <div className="flex justify-between">
                   <span className="text-stone-500">Producer:</span>
-                  <span className="font-semibold text-stone-900">{formData.farmerRecordId || 'Producer not selected'}</span>
+                  <span className="font-semibold text-stone-900">{selectedProducers.length ? selectedProducers.map((producer) => producer.user.fullName).join(', ') : 'Producer not selected'}</span>
                 </div>
               </div>
 
@@ -553,7 +639,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
               className="inline-flex items-center gap-1.5 px-6 py-2 text-xs font-semibold text-white bg-forest-800 hover:bg-forest-900 shadow-xs disabled:opacity-50"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{isSubmitting ? t('common.submitting', 'Submitting Agreement...') : t('wizard.createDraft', 'Submit Tripartite Contract')}</span>
+              <span>{isSubmitting ? t('common.submitting', 'Submitting Agreement...') : t('wizard.createDraft', 'Save Draft')}</span>
             </button>
           )}
         </div>

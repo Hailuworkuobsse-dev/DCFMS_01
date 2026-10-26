@@ -193,7 +193,7 @@ export const SignatureOTPModal: React.FC<SignatureOTPModalProps> = ({
               </div>
             ) : (
               <p className="text-[11px] text-stone-500">
-                {t('signature.otpSentNotice', 'Demo verification code: 123456')}
+                {t('signature.otpSentNotice', 'Select Send OTP to receive a code on the phone registered to your account.')}
               </p>
             )}
           </div>
