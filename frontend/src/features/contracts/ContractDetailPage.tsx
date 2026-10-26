@@ -98,9 +98,7 @@ export const ContractDetailPage: React.FC<ContractDetailPageProps> = ({
 
   const handleEndorse = async () => {
     try {
-      await api.contracts.endorse(contract.id, {
-        notes: 'Endorsed after technical and floor price compliance check.',
-      });
+      await api.contracts.endorse(contract.id);
       setIsEndorseModalOpen(false);
       await fetchContract();
     } catch (err: any) {
