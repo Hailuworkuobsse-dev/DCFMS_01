@@ -36,6 +36,12 @@ export class ContractsController {
     return this.contracts.list(user, { status, commodity, region, woreda }).then((contracts) => ({ contracts }));
   }
 
+  @Get('review-queue')
+  @Roles(Role.MOA_OFFICER, Role.RBOA_OFFICER, Role.WBOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER)
+  reviewQueue(@CurrentUser() user: JwtUser) {
+    return this.contracts.listReviewQueue(user).then((contracts) => ({ contracts }));
+  }
+
   @Get('templates')
   listTemplates(@CurrentUser() user: JwtUser, @Query('commodity') commodity?: string) {
     return this.contracts.listApprovedTemplates(user, commodity).then((templates) => ({ templates }));
@@ -105,6 +111,11 @@ export class ContractsController {
     return this.contracts.acceptChange(id, dto, user);
   }
 
+  @Get(':id/signature-evidence')
+  signatureEvidence(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.signatures.listSignatureEvidence(id, user).then((evidence) => ({ evidence }));
+  }
+
   @Get(':id/integrity')
   async integrity(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.verifyIntegrity(id, user);
@@ -148,7 +159,7 @@ export class ContractsController {
   }
 
   @Patch(':id/approve')
-  @Roles(Role.MOA_OFFICER, Role.RBOA_OFFICER, Role.WBOA_OFFICER)
+  @Roles(Role.MOA_OFFICER, Role.RBOA_OFFICER, Role.WBOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER)
   approve(
     @Param('id') id: string,
     @Body() dto: ApproveContractDto,
