@@ -152,11 +152,31 @@ export class ContractsService {
     });
   }
 
-  async createTemplate(dto: { title: string; description?: string; commodity?: string; language?: string; clauses: unknown }, actor: JwtUser) {
-    if (actor.role !== Role.SYSTEM_ADMIN) throw new ForbiddenException('Only system administrators can manage contract templates');
-    if (!Array.isArray(dto.clauses) || dto.clauses.length === 0) {
+  private validateTemplateDefinition(clauses: unknown): asserts clauses is Array<{ key: string; title: string; text: string; mandatory?: boolean; editable?: boolean }> {
+    if (!Array.isArray(clauses) || clauses.length === 0) {
       throw new BadRequestException('A template must contain at least one structured clause');
     }
+    const keys = new Set<string>();
+    for (const clause of clauses as any[]) {
+      if (!clause || typeof clause.key !== 'string' || !clause.key.trim() ||
+        typeof clause.title !== 'string' || !clause.title.trim() ||
+        typeof clause.text !== 'string' || !clause.text.trim()) {
+        throw new BadRequestException('Every template clause must have a key, title, and non-empty text');
+      }
+      if (keys.has(clause.key)) throw new BadRequestException('Template clause keys must be unique');
+      keys.add(clause.key);
+      if (clause.mandatory !== undefined && typeof clause.mandatory !== 'boolean') {
+        throw new BadRequestException('Template mandatory flags must be boolean');
+      }
+      if (clause.editable !== undefined && typeof clause.editable !== 'boolean') {
+        throw new BadRequestException('Template editable flags must be boolean');
+      }
+    }
+  }
+
+  async createTemplate(dto: { title: string; description?: string; commodity?: string; language?: string; clauses: unknown }, actor: JwtUser) {
+    if (actor.role !== Role.SYSTEM_ADMIN) throw new ForbiddenException('Only system administrators can manage contract templates');
+    this.validateTemplateDefinition(dto.clauses);
     return this.prisma.contractTemplate.create({
       data: {
         title: dto.title.trim(), description: dto.description, commodity: dto.commodity,
@@ -169,9 +189,7 @@ export class ContractsService {
     if (actor.role !== Role.SYSTEM_ADMIN) throw new ForbiddenException('Only system administrators can approve contract templates');
     const template = await this.prisma.contractTemplate.findUnique({ where: { id } });
     if (!template) throw new NotFoundException('Template not found');
-    if (!Array.isArray(template.clauses) || template.clauses.length === 0) {
-      throw new BadRequestException('A template must contain at least one structured clause');
-    }
+    this.validateTemplateDefinition(template.clauses);
     return this.prisma.contractTemplate.update({
       where: { id },
       data: { status: 'APPROVED', approvedById: actor.sub, approvedAt: new Date() },
