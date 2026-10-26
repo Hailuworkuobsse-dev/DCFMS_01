@@ -25,7 +25,7 @@ describe('ContractsService access control', () => {
       farmer: { id: 'farmer-record-2', userId: 'farmer-two', user: { id: 'farmer-two', region: 'Oromia', woreda: 'Ada', kebele: 'Kebele 02' }, cooperative: { userId: 'different-cooperative' } },
     }],
     signatures: [],
-    versions: [],
+    versions: [{ id: 'version-1', version: 1, content: {}, hash: 'hash-v1', createdById: 'contractor-owner', createdAt: new Date('2026-01-01T00:00:00.000Z') }],
     payments: [{ id: 'payment-own', payerId: 'farmer-owner', payeeId: 'contractor-owner' }, { id: 'payment-other', payerId: 'farmer-two', payeeId: 'contractor-owner' }],
     loans: [{ id: 'loan-own', farmerId: 'farmer-record-1', fiId: 'fi-owner' }, { id: 'loan-other', farmerId: 'farmer-record-2', fiId: 'other-fi' }],
     vouchers: [{ id: 'voucher-own', farmerId: 'farmer-record-1', agroDealerId: 'dealer-owner' }, { id: 'voucher-other', farmerId: 'farmer-record-2', agroDealerId: 'other-dealer' }],
@@ -43,6 +43,11 @@ describe('ContractsService access control', () => {
         update: jest.fn(),
       },
       contractor: { findUnique: jest.fn() },
+      contractTemplate: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+      contractVersion: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'version-2', version: 2 }) },
+      contractComment: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'comment-1' }) },
+      contractAnnex: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'annex-1' }) },
+      contractChangeAcceptance: { findMany: jest.fn().mockResolvedValue([{ userId: 'farmer-owner' }, { userId: 'farmer-two' }, { userId: 'contractor-owner' }]), upsert: jest.fn().mockResolvedValue({ accepted: true }) },
       contractParty: { findMany: jest.fn().mockResolvedValue([
         { role: 'FARMER', farmer: { userId: 'farmer-owner' } },
         { role: 'FARMER', farmer: { userId: 'farmer-two' } },
@@ -51,6 +56,7 @@ describe('ContractsService access control', () => {
       farmer: { findMany: jest.fn().mockResolvedValue([{ id: 'farmer-record-1', user: { region: 'Oromia', woreda: 'Ada' } }]) },
       parcel: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
     };
+    prisma.$transaction = jest.fn(async (callback: any) => callback(prisma));
     service = new ContractsService(prisma, { log: jest.fn() } as any, { canTransition: jest.fn().mockReturnValue(true) } as any);
   });
 
@@ -166,6 +172,70 @@ describe('ContractsService access control', () => {
       sub: 'woreda-officer', role: Role.WBOA_OFFICER, adminLevel: AdminLevel.WOREDA,
       region: 'Oromia', woreda: 'Different Woreda',
     })).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.contract.update).not.toHaveBeenCalled();
+  });
+
+  it('lists only approved templates and narrows by commodity', async () => {
+    await service.listApprovedTemplates({ sub: 'contractor-owner', role: Role.CONTRACTOR }, 'Wheat');
+    expect(prisma.contractTemplate.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { status: 'APPROVED', OR: [{ commodity: 'Wheat' }, { commodity: null }] },
+    }));
+  });
+
+  it('saves a new draft version using the expected current version', async () => {
+    prisma.contract.update.mockResolvedValue({ ...contract, content: { clauses: [] } });
+    await service.saveDraft(contract.id, {
+      content: { clauses: [{ key: 'price', text: 'New agreed price' }] },
+      expectedVersion: 1,
+      changeSummary: 'Clarified price term',
+    }, { sub: 'contractor-owner', role: Role.CONTRACTOR });
+    expect(prisma.contract.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: contract.id, status: 'DRAFT' }),
+    }));
+    expect(prisma.contractVersion.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ contractId: contract.id, version: 2, createdById: 'contractor-owner' }),
+    }));
+  });
+
+  it('rejects stale draft saves instead of overwriting a newer version', async () => {
+    await expect(service.saveDraft(contract.id, { content: {}, expectedVersion: 0 }, {
+      sub: 'contractor-owner', role: Role.CONTRACTOR,
+    })).rejects.toThrow('This draft has changed since you opened it');
+    expect(prisma.contract.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects removal of mandatory approved-template clauses', async () => {
+    prisma.contract.findUnique.mockResolvedValue({
+      ...JSON.parse(JSON.stringify(contract)), templateId: 'template-1', updatedAt: new Date(),
+    });
+    prisma.contractTemplate.findUnique.mockResolvedValue({
+      id: 'template-1', status: 'APPROVED',
+      clauses: [{ key: 'purpose', title: 'Purpose', text: 'Fixed legal text', mandatory: true, editable: false }],
+    });
+    await expect(service.saveDraft(contract.id, { content: { clauses: [] }, expectedVersion: 1 }, {
+      sub: 'contractor-owner', role: Role.CONTRACTOR,
+    })).rejects.toThrow('Mandatory clause');
+    expect(prisma.contract.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects edits to locked clauses from an approved template', async () => {
+    prisma.contract.findUnique.mockResolvedValue({
+      ...JSON.parse(JSON.stringify(contract)), templateId: 'template-1', updatedAt: new Date(),
+    });
+    prisma.contractTemplate.findUnique.mockResolvedValue({
+      id: 'template-1', status: 'APPROVED',
+      clauses: [{ key: 'purpose', title: 'Purpose', text: 'Fixed legal text', mandatory: true, editable: false }],
+    });
+    await expect(service.saveDraft(contract.id, {
+      content: { clauses: [{ key: 'purpose', title: 'Purpose', text: 'Changed legal text' }] }, expectedVersion: 1,
+    }, { sub: 'contractor-owner', role: Role.CONTRACTOR })).rejects.toThrow('is locked by the approved template');
+    expect(prisma.contract.update).not.toHaveBeenCalled();
+  });
+
+  it('does not allow sending a draft for signature until all parties accept the latest version', async () => {
+    prisma.contractChangeAcceptance.findMany.mockResolvedValue([{ userId: 'contractor-owner' }]);
+    await expect(service.sendForSignatures(contract.id, { sub: 'contractor-owner', role: Role.CONTRACTOR }))
+      .rejects.toThrow('Every contracting party must accept the latest draft version');
     expect(prisma.contract.update).not.toHaveBeenCalled();
   });
 
