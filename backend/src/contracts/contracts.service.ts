@@ -534,6 +534,8 @@ export class ContractsService {
     if (contract.status !== 'DRAFT') {
       throw new BadRequestException('Only DRAFT contracts can be sent for signature');
     }
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; signature submission is blocked');
     if (!this.lifecycle.canTransition(contract.status, 'PENDING_SIGNATURES')) {
       throw new BadRequestException('Invalid transition');
     }
@@ -591,6 +593,8 @@ export class ContractsService {
     if (contract.status !== 'SIGNED') {
       throw new BadRequestException('Contract must be fully signed');
     }
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; statutory submission is blocked');
     const updated = await this.prisma.contract.update({
       where: { id }, data: { status: 'PENDING_APPROVAL' },
     });
@@ -675,6 +679,8 @@ export class ContractsService {
     if (contract.status !== 'PENDING_APPROVAL') {
       throw new BadRequestException('Contract is not pending statutory approval');
     }
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; statutory decision is blocked');
     const newStatus = decision === 'APPROVE' ? 'APPROVED' : decision === 'REJECT' ? 'REJECTED' : 'RETURNED_FOR_CORRECTION';
     const updated = await this.prisma.$transaction(async (tx: any) => {
       const result = await tx.contract.update({
@@ -727,7 +733,7 @@ export class ContractsService {
       createdAt: createdAt.toISOString(),
     };
     const eventHash = createHash('sha256').update(canonicalJson(payload)).digest('hex');
-    await this.prisma.contractEvent.create({ data: { ...payload, createdAt, eventHash } });
+    await this.prisma.contractEvent.create({ data: { ...payload, metadata: metadata as any, createdAt, eventHash } });
     const recipientIds = [...new Set([
       contract.createdById,
       ...(contract.parties || []).map((party: any) => party.farmer?.userId).filter(Boolean),
@@ -863,6 +869,8 @@ export class ContractsService {
     if (actor.role === Role.WBOA_OFFICER && (!actor.region || !actor.woreda || contract.region !== actor.region || contract.woreda !== actor.woreda)) throw new ForbiddenException('Out of WBoA review scope');
     if (actor.role === Role.RBOA_OFFICER && (!actor.region || contract.region !== actor.region)) throw new ForbiddenException('Out of RBoA review scope');
     if (actor.role === Role.MOA_OFFICER && actor.adminLevel !== AdminLevel.FEDERAL) throw new ForbiddenException('MoA reviewers must have federal scope');
+    const amendmentIntegrity = await this.verifyIntegrity(id, actor);
+    if (!amendmentIntegrity.intact) throw new BadRequestException('Contract integrity check failed; amendment review is blocked');
     const amendment = await this.prisma.contractAmendment.findFirst({ where: { id: amendmentId, contractId: id } });
     if (!amendment || amendment.status !== 'PENDING_APPROVAL') throw new NotFoundException('Pending amendment not found');
     if (decision === 'REJECT') {
@@ -967,14 +975,16 @@ export class ContractsService {
     const annexIntegrity = annexResults.every((a: any) => a.intact);
     const eventIntegrity = eventResults.every((e: any) => e.intact);
     const currentContentIntact = contract.contentHash === recomputed;
+    const latestEvent = events.length ? events[events.length - 1] : null;
+    const eventStatusMatchesContract = !latestEvent || !latestEvent.toStatus || latestEvent.toStatus === contract.status;
     return {
       contractId: id, checkedAt: new Date().toISOString(),
       storedContentHash: contract.contentHash, recomputedContentHash: recomputed,
       currentContentIntact, latestVersionMatchesContract: latestMatchesContract,
       versionIntegrity, versions: versionResults,
       annexIntegrity, annexes: annexResults,
-      eventLedgerIntegrity: eventIntegrity, events: eventResults,
-      intact: currentContentIntact && latestMatchesContract && versionIntegrity && annexIntegrity && eventIntegrity,
+      eventLedgerIntegrity: eventIntegrity, eventStatusMatchesContract, events: eventResults,
+      intact: currentContentIntact && latestMatchesContract && versionIntegrity && annexIntegrity && eventIntegrity && eventStatusMatchesContract,
     };
   }
 
