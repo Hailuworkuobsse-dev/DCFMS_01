@@ -185,13 +185,10 @@ describe('ContractsService access control', () => {
     expect(prisma.contract.create).not.toHaveBeenCalled();
   });
 
-  it('does not let a cooperative attach a non-member producer record', async () => {
-    prisma.cooperative.findUnique.mockResolvedValue({ id: 'coop-1', userId: 'cooperative-owner' });
-    prisma.farmer.findMany.mockResolvedValue([]);
+  it('rejects cooperative contract creation until organizational parties are represented in the schema', async () => {
     await expect(service.create({
       commodity: 'Wheat', quantity: 1, priceMechanism: 'MARKET', content: {},
-      parties: [{ role: 'FARMER', farmerId: 'non-member-farmer' }],
+      parties: [{ role: 'FARMER', farmerId: 'farmer-record-1' }],
     } as any, { sub: 'cooperative-owner', role: Role.COOPERATIVE })).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.contract.create).not.toHaveBeenCalled();
-  });
-});
+  });});
