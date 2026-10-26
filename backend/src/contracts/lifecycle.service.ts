@@ -11,6 +11,7 @@ const ALLOWED: Record<ContractStatus, ContractStatus[]> = {
   COMPLETED: ['ADJUSTED'],
   ADJUSTED: [],
   REJECTED: ['DRAFT'],
+  RETURNED_FOR_CORRECTION: ['DRAFT', 'CANCELLED'],
   CANCELLED: [],
 };
 
