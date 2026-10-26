@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Activity, Bell, CheckCircle2, ClipboardCheck, FileClock, FileWarning, ShieldCheck } from 'lucide-react';
+import { Activity, Bell, CheckCircle2, ClipboardCheck, FileWarning, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api/client';
 
 type Props = {
   contractId: string;
   status: string;
-  currentUserId?: string;
   currentUserRole?: string;
   initialContent?: Record<string, unknown>;
   currentVersion: number;
@@ -15,7 +14,7 @@ type Props = {
 const dateLabel = (value?: string | null) => value ? new Date(value).toLocaleString() : '—';
 
 export const ContractLifecyclePanel: React.FC<Props> = ({
-  contractId, status, currentUserId, currentUserRole, initialContent, currentVersion, onRefresh,
+  contractId, status, currentUserRole, initialContent, currentVersion, onRefresh,
 }) => {
   const [events, setEvents] = useState<any[]>([]);
   const [milestones, setMilestones] = useState<any[]>([]);
