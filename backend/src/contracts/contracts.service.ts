@@ -56,6 +56,7 @@ export class ContractsService {
     if (dto.parties.some((p) => p.role === 'CONTRACTOR' || !p.farmerId)) {
       throw new BadRequestException('Select valid producer parties; contractor identity is derived from your account');
     }
+    if (!dto.templateId) throw new BadRequestException('An approved contract template is required');
     if (dto.templateId) {
       const template = await this.prisma.contractTemplate.findUnique({ where: { id: dto.templateId } });
       if (!template || template.status !== 'APPROVED') throw new BadRequestException('Select an approved contract template');
