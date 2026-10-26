@@ -910,7 +910,7 @@ export class ContractsService {
       await tx.parcel.updateMany({ where: { contractId: id }, data: { isLocked: false, contractId: null } });
       return { contract: updatedContract, closure };
     });
-    await this.recordLifecycleEvent(id, actor, 'CONTRACT_CLOSED', 'Contract formally closed after required milestones were completed', 'IN_EXECUTION', 'COMPLETED', { closureId: result.closure.id, finalContentHash, notes, latestVersion });
+    await this.recordLifecycleEvent(id, actor, 'CONTRACT_CLOSED', 'Contract formally closed after required milestones were completed', 'IN_EXECUTION', 'COMPLETED', { closureId: result.closure.id, finalContentHash, notes });
     await this.audit.log({ actorId: actor.sub, action: AuditAction.UPDATE, entity: 'Contract', entityId: id, before: { status: 'IN_EXECUTION' }, after: { status: 'COMPLETED', closureId: result.closure.id, finalContentHash } });
     return result;
   }
