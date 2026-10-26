@@ -407,4 +407,18 @@ describe('ContractsService access control', () => {
     expect(result.currentContentIntact).toBe(true);
     expect(result.versionIntegrity).toBe(true);
   });
+
+  it('detects tampering in a saved contract version', async () => {
+    const changedContent = { clauses: [{ key: 'price', text: 'tampered' }] };
+    prisma.contract.findUnique.mockResolvedValue({ ...contract, content: fixtureContent, contentHash: fixtureHash });
+    prisma.contractVersion.findMany.mockResolvedValue([{
+      id: 'version-1', contractId: contract.id, version: 1, content: changedContent,
+      hash: fixtureHash, previousHash: null,
+    }]);
+    prisma.contractAnnex.findMany.mockResolvedValue([]);
+    prisma.contractEvent.findMany.mockResolvedValue([]);
+    const result = await service.verifyIntegrity(contract.id, { sub: 'contractor-owner', role: Role.CONTRACTOR });
+    expect(result.versionIntegrity).toBe(false);
+    expect(result.intact).toBe(false);
+  });
 });
