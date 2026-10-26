@@ -57,16 +57,6 @@ export class ContractsService {
       throw new BadRequestException('Select valid producer parties; contractor identity is derived from your account');
     }
 
-    const farmerIds = [...new Set(dto.parties.map((p) => p.farmerId as string))];
-      const members = await this.prisma.farmer.findMany({
-        where: { id: { in: farmerIds }, cooperativeId: cooperative.id },
-        select: { id: true },
-      });
-      if (members.length !== farmerIds.length) {
-        throw new ForbiddenException('A cooperative may only contract its registered members');
-      }
-    }
-
     const farmerIds = [...new Set(dto.parties.map((p) => p.farmerId).filter((id): id is string => Boolean(id)))];
     let contractRegion = dto.region;
     let contractWoreda = dto.woreda;
@@ -402,12 +392,4 @@ export class ContractsService {
     return `DCF-${year}-${String(count + 1).padStart(6, '0')}`;
   }
 
-  private assertInScope(contract: any, actor: JwtUser) {
-    if (actor.adminLevel === AdminLevel.REGIONAL && contract.region && contract.region !== actor.region) {
-      throw new ForbiddenException('Out of scope');
-    }
-    if (actor.adminLevel === AdminLevel.WOREDA && contract.woreda && contract.woreda !== actor.woreda) {
-      throw new ForbiddenException('Out of scope');
-    }
-  }
 }
