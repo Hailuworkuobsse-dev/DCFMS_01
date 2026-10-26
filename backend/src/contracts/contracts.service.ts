@@ -252,7 +252,7 @@ export class ContractsService {
     }
     const hash = createHash('sha256').update(canonicalJson(dto.content)).digest('hex');
     const nextVersion = latestVersion + 1;
-    return this.prisma.$transaction(async (tx: any) => {
+    const result = await this.prisma.$transaction(async (tx: any) => {
       const updated = await tx.contract.update({
         where: { id, status: 'DRAFT', updatedAt: contract.updatedAt },
         data: { content: dto.content, contentHash: hash },
@@ -263,12 +263,13 @@ export class ContractsService {
       await tx.contractComment.create({
         data: { contractId: id, authorId: actor.sub, body: (dto.changeSummary || `Saved draft version ${nextVersion}`).slice(0, 4000), clauseKey: null },
       });
-      await this.audit.log({
-        actorId: actor.sub, action: AuditAction.UPDATE, entity: 'Contract', entityId: id,
-        before: { version: latestVersion }, after: { version: nextVersion, hash },
-      });
       return { contract: updated, version };
     });
+    await this.audit.log({
+      actorId: actor.sub, action: AuditAction.UPDATE, entity: 'Contract', entityId: id,
+      before: { version: latestVersion }, after: { version: nextVersion, hash },
+    });
+    return result;
   }
 
   async listComments(id: string, actor: JwtUser) {
