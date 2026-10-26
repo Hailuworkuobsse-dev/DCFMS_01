@@ -89,9 +89,9 @@ export const FUNCTIONAL_WORKFLOW_ACCESS: Record<
   B2: {
     workflowId: 'B2',
     actors: [
-      actor('Contractor', 'org', 'contract:update:org'),
-      actor('ProducerCooperative', 'org', 'contract:update:org', 'contract:sign:org'),
-      actor('ProducerIndividual', 'own', 'contract:update:own', 'contract:sign:own'),
+      actor('Contractor', 'org', 'contract:read:org'),
+      actor('ProducerCooperative', 'org', 'contract:read:org', 'contract:sign:org'),
+      actor('ProducerIndividual', 'own', 'contract:read:own', 'contract:sign:own'),
       actor('WBoAWoreda', 'woreda', 'contract:read:woreda'),
     ],
   },
@@ -133,9 +133,9 @@ export const FUNCTIONAL_WORKFLOW_ACCESS: Record<
   B7: {
     workflowId: 'B7',
     actors: [
-      actor('Contractor', 'org', 'contract:update:org'),
-      actor('ProducerCooperative', 'org', 'contract:update:org'),
-      actor('ProducerIndividual', 'own', 'contract:update:own'),
+      actor('Contractor', 'org', 'contract:read:org'),
+      actor('ProducerCooperative', 'org', 'contract:read:org'),
+      actor('ProducerIndividual', 'own', 'contract:read:own'),
       actor('WBoAWoreda', 'woreda', 'contract:approve:woreda'),
     ],
   },
