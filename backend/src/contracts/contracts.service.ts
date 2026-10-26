@@ -84,8 +84,8 @@ export class ContractsService {
       const regions = new Set(existing.map((farmer: any) => farmer.user.region));
       const woredas = new Set(existing.map((farmer: any) => farmer.user.woreda));
       if (regions.size > 1 || woredas.size > 1) throw new BadRequestException('A contract cannot mix producers from different regional or woreda jurisdictions');
-      const producerRegion = existing[0].user.region;
-      const producerWoreda = existing[0].user.woreda;
+      const producerRegion = existing[0].user.region as string;
+      const producerWoreda = existing[0].user.woreda as string;
       if (dto.region && dto.region !== producerRegion) throw new ForbiddenException('Contract region must match the selected producer');
       if (dto.woreda && dto.woreda !== producerWoreda) throw new ForbiddenException('Contract woreda must match the selected producer');
       contractRegion = producerRegion;
