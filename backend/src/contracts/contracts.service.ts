@@ -185,7 +185,7 @@ export class ContractsService {
     if (term.length < 2) throw new BadRequestException('Enter at least two characters to search the verified producer directory');
     return this.prisma.farmer.findMany({
       where: {
-        user: { isActive: true, role: Role.FARMER, OR: [{ fullName: { contains: term } }, { phone: { contains: term } }] },
+        user: { is: { isActive: true, role: Role.FARMER, OR: [{ fullName: { contains: term } }, { phone: { contains: term } }] } },
         parcels: { some: { isLocked: false } },
       },
       take: 20,
