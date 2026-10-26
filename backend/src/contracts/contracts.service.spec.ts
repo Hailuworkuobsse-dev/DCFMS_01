@@ -20,12 +20,15 @@ describe('ContractsService access control', () => {
         user: { id: 'farmer-owner', region: 'Oromia', woreda: 'Ada', kebele: 'Kebele 01' },
         cooperative: { userId: 'cooperative-owner' },
       },
+    }, {
+      id: 'party-2', role: 'FARMER', farmerId: 'farmer-record-2',
+      farmer: { id: 'farmer-record-2', userId: 'farmer-two', user: { id: 'farmer-two', region: 'Oromia', woreda: 'Ada', kebele: 'Kebele 02' }, cooperative: { userId: 'cooperative-owner' } },
     }],
     signatures: [],
     versions: [],
-    payments: [],
-    loans: [],
-    vouchers: [],
+    payments: [{ id: 'payment-own', payerId: 'farmer-owner', payeeId: 'contractor-owner' }, { id: 'payment-other', payerId: 'farmer-two', payeeId: 'contractor-owner' }],
+    loans: [{ id: 'loan-own', farmerId: 'farmer-record-1', fiId: 'fi-owner' }, { id: 'loan-other', farmerId: 'farmer-record-2', fiId: 'other-fi' }],
+    vouchers: [{ id: 'voucher-own', farmerId: 'farmer-record-1', agroDealerId: 'dealer-owner' }, { id: 'voucher-other', farmerId: 'farmer-record-2', agroDealerId: 'other-dealer' }],
   };
 
   let prisma: any;
@@ -34,7 +37,7 @@ describe('ContractsService access control', () => {
   beforeEach(() => {
     prisma = {
       contract: {
-        findUnique: jest.fn().mockResolvedValue(contract),
+        findUnique: jest.fn().mockImplementation(async () => JSON.parse(JSON.stringify(contract))),
         findMany: jest.fn().mockResolvedValue([contract]),
         create: jest.fn(),
         update: jest.fn(),
@@ -59,6 +62,13 @@ describe('ContractsService access control', () => {
       .resolves.toMatchObject({ id: contract.id });
     await expect(service.findOne(contract.id, { sub: 'different-farmer', role: Role.FARMER }))
       .rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('does not expose another producer\'s linked finance or input records to an individual farmer', async () => {
+    const result = await service.findOne(contract.id, { sub: 'farmer-owner', role: Role.FARMER });
+    expect(result.loans.map((loan: any) => loan.id)).toEqual(['loan-own']);
+    expect(result.vouchers.map((voucher: any) => voucher.id)).toEqual(['voucher-own']);
+    expect(result.payments.map((payment: any) => payment.id)).toEqual(['payment-own']);
   });
 
   it('allows a cooperative to read contracts linked to its registered members', async () => {
