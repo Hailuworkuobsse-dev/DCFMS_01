@@ -586,36 +586,90 @@ export class ContractsService {
     });
   }
 
-  async approve(id: string, decision: 'APPROVE' | 'REJECT', note: string | undefined, actor: JwtUser) {
+  async listReviewQueue(actor: JwtUser) {
     if (!APPROVER_ROLES.includes(actor.role as Role)) {
-      throw new ForbiddenException('Only government approvers can approve contracts');
+      throw new ForbiddenException('Only statutory reviewers may access the review queue');
+    }
+    const where: any = { status: 'PENDING_APPROVAL' };
+    if (actor.role === Role.WBOA_OFFICER) {
+      if (!actor.region || !actor.woreda) throw new ForbiddenException('WBoA reviewers must have a registered region and woreda scope');
+      where.region = actor.region;
+      where.woreda = actor.woreda;
+    } else if (actor.role === Role.RBOA_OFFICER) {
+      if (!actor.region) throw new ForbiddenException('RBoA reviewers must have a registered region scope');
+      where.region = actor.region;
+    } else if (actor.role !== Role.MOA_OFFICER && actor.adminLevel !== AdminLevel.FEDERAL) {
+      if (actor.adminLevel === AdminLevel.REGIONAL) {
+        if (!actor.region) throw new ForbiddenException('Reviewer region is missing');
+        where.region = actor.region;
+      } else if (actor.adminLevel === AdminLevel.WOREDA) {
+        if (!actor.region || !actor.woreda) throw new ForbiddenException('Reviewer woreda scope is missing');
+        where.region = actor.region;
+        where.woreda = actor.woreda;
+      } else {
+        throw new ForbiddenException('This reviewer has no statutory jurisdiction configured');
+      }
+    }
+    return this.prisma.contract.findMany({
+      where, orderBy: { updatedAt: 'asc' },
+      select: {
+        id: true, contractNo: true, commodity: true, quantity: true, unit: true,
+        status: true, region: true, woreda: true, createdAt: true, updatedAt: true,
+        createdBy: { select: { id: true, fullName: true, role: true } },
+        parties: { include: { farmer: { include: { user: { select: { id: true, fullName: true, phone: true, region: true, woreda: true } } } } } },
+        signatures: { select: { id: true, signerId: true, role: true, status: true, signedAt: true, signatureHash: true } },
+      },
+    });
+  }
+
+  async approve(id: string, decision: 'APPROVE' | 'REJECT' | 'RETURN_FOR_CORRECTION', note: string | undefined, actor: JwtUser) {
+    if (!APPROVER_ROLES.includes(actor.role as Role)) {
+      throw new ForbiddenException('Only government approvers can review contracts');
+    }
+    if (decision !== 'APPROVE' && !note?.trim()) {
+      throw new BadRequestException('A reason is required when rejecting or returning a contract');
     }
     const contract = await this.findOne(id, actor);
+    if (actor.role === Role.WBOA_OFFICER && (!actor.region || !actor.woreda || contract.region !== actor.region || contract.woreda !== actor.woreda)) {
+      throw new ForbiddenException('Out of WBoA woreda approval scope');
+    }
+    if (actor.role === Role.RBOA_OFFICER && (!actor.region || contract.region !== actor.region)) {
+      throw new ForbiddenException('Out of RBoA regional approval scope');
+    }
     if (actor.adminLevel === AdminLevel.REGIONAL && (!actor.region || contract.region !== actor.region)) {
       throw new ForbiddenException('Out of regional approval scope');
     }
-    if (actor.adminLevel === AdminLevel.WOREDA && (!actor.woreda || contract.woreda !== actor.woreda)) {
+    if (actor.adminLevel === AdminLevel.WOREDA && (!actor.region || !actor.woreda || contract.region !== actor.region || contract.woreda !== actor.woreda)) {
       throw new ForbiddenException('Out of woreda approval scope');
     }
     if (contract.status !== 'PENDING_APPROVAL') {
-      throw new BadRequestException('Contract is not pending approval');
+      throw new BadRequestException('Contract is not pending statutory approval');
     }
-    const newStatus = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
-    const updated = await this.prisma.contract.update({
-      where: { id },
-      data: {
-        status: newStatus,
-        approvedById: actor.sub,
-        approvedAt: new Date(),
-        rejectionNote: decision === 'REJECT' ? note : null,
-      },
+    const newStatus = decision === 'APPROVE' ? 'APPROVED' : decision === 'REJECT' ? 'REJECTED' : 'RETURNED_FOR_CORRECTION';
+    const updated = await this.prisma.$transaction(async (tx: any) => {
+      const result = await tx.contract.update({
+        where: { id },
+        data: {
+          status: newStatus,
+          approvedById: decision === 'APPROVE' ? actor.sub : null,
+          approvedAt: decision === 'APPROVE' ? new Date() : null,
+          rejectionNote: decision === 'APPROVE' ? null : note!.trim(),
+        },
+      });
+      await tx.contractReviewAction.create({
+        data: {
+          contractId: id, reviewerId: actor.sub, reviewerRole: actor.role,
+          action: decision, note: note?.trim(), fromStatus: 'PENDING_APPROVAL',
+          toStatus: newStatus, scopeRegion: actor.region, scopeWoreda: actor.woreda,
+        },
+      });
+      return result;
     });
-
     await this.audit.log({
       actorId: actor.sub,
       action: decision === 'APPROVE' ? AuditAction.APPROVE : AuditAction.REJECT,
       entity: 'Contract', entityId: id,
-      after: { status: newStatus, note },
+      after: { status: newStatus, decision, note, reviewerRole: actor.role, scopeRegion: actor.region, scopeWoreda: actor.woreda },
     });
     return updated;
   }
