@@ -276,7 +276,7 @@ export class ContractsService {
 
   async submitForApproval(id: string, actor: JwtUser) {
     const contract = await this.findOne(id, actor);
-    if (contract.createdById !== actor.sub || ![Role.CONTRACTOR, Role.COOPERATIVE].includes(actor.role as Role)) {
+    if (contract.createdById !== actor.sub || (actor.role !== Role.CONTRACTOR && actor.role !== Role.COOPERATIVE)) {
       throw new ForbiddenException('Only the contract creator may submit it for approval');
     }
     if (contract.status !== 'SIGNED') {
