@@ -490,7 +490,7 @@ enum ContractTemplateStatus {
 model ContractTemplate {
   id          String   @id @default(uuid())
   title       String
-  description String?
+  description String? @db.Text
   commodity   String?
   language    String   @default("en")
   version     Int      @default(1)
@@ -524,7 +524,7 @@ model ContractAnnex {
   contractId  String
   contract    Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
   title       String
-  description String?
+  description String? @db.Text
   content     Json?
   fileName    String?
   mimeType    String?
@@ -544,7 +544,7 @@ model ContractChangeAcceptance {
   version    Int
   userId     String
   accepted   Boolean
-  comment    String?
+  comment    String? @db.Text
   acceptedAt DateTime @default(now())
 
   @@unique([contractId, version, userId])
