@@ -100,6 +100,21 @@ describe('ContractsService access control', () => {
     })).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('does not grant a field agent broad woreda access merely because an adminLevel claim exists', async () => {
+    await expect(service.findOne(contract.id, {
+      sub: 'field-agent', role: Role.FIELD_AGENT, adminLevel: AdminLevel.WOREDA,
+      region: 'Oromia', woreda: 'Ada',
+    })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('does not allow an approver to change a contract outside their woreda', async () => {
+    await expect(service.approve(contract.id, 'APPROVE', undefined, {
+      sub: 'woreda-officer', role: Role.WBOA_OFFICER, adminLevel: AdminLevel.WOREDA,
+      region: 'Oromia', woreda: 'Different Woreda',
+    })).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.contract.update).not.toHaveBeenCalled();
+  });
+
   it('does not allow an unrelated contractor to submit another party contract for signature', async () => {
     await expect(service.sendForSignatures(contract.id, {
       sub: 'different-contractor', role: Role.CONTRACTOR,
