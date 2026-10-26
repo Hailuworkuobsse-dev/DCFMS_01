@@ -122,7 +122,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
   });
 
   const selectedParcelArea = selectedProducers.reduce((sum, producer) => sum + producer.parcels.filter((parcel: any) => selectedParcelIds.includes(parcel.id)).reduce((parcelSum: number, parcel: any) => parcelSum + Number(parcel.sizeHa || 0), 0), 0);
-  const totalValue = formData.quantityKg * formData.unitPriceEtb;
+  const totalValue = formData.quantityKg * (formData.pricingModel === 'FIXED' ? formData.unitPriceEtb : formData.floorPriceEtb);
 
   const validateStep = (step: number): boolean => {
     setError(null);
@@ -135,9 +135,13 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
         setError(t('wizard.invalidCommodity', 'Please specify a commodity and a positive quantity.'));
         return false;
       }
+      if (formData.maxMoisturePercent <= 0 || formData.maxMoisturePercent > 100 || formData.minPurityPercent <= 0 || formData.minPurityPercent > 100) {
+        setError('Enter valid moisture and purity percentages between greater than 0 and 100.');
+        return false;
+      }
     }
     if (step === 2) {
-      if (selectedProducers.length === 0 || selectedParcelIds.length === 0 || selectedParcelArea <= 0) {
+      if (selectedProducers.length === 0 || selectedParcelIds.length === 0 || selectedParcelArea <= 0 || selectedProducers.some((producer) => !producer.parcels.some((parcel: any) => selectedParcelIds.includes(parcel.id)))) {
         setError(t('wizard.invalidParties', 'Select at least one verified producer and one available parcel.'));
         return false;
       }
