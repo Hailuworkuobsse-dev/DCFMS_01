@@ -45,12 +45,10 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
         commodity: demand.commodity || current.commodity,
         quantityKg: Number(demand.estimatedVolumeQt || 0) * 100 || current.quantityKg,
         landAreaHectares: Number(demand.totalHectares || 0) || current.landAreaHectares,
+        region: demand.region || current.region,
         woreda: demand.woreda || current.woreda,
         kebele: demand.kebele || current.kebele,
         contractorOrgName: demand.buyerOrgName || current.contractorOrgName,
-        farmerName: '',
-        farmerFaydaId: '',
-        farmerPhone: '',
       }));
     }).catch((err) => {
       if (!cancelled) setError(err instanceof Error ? err.message : t('wizard.linkageLoadFailed', 'Unable to load the selected demand.'));
@@ -67,20 +65,16 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
     landAreaHectares: 8.5,
     maxMoisturePercent: 12.5,
     minPurityPercent: 98.0,
-    deliveryStartDate: '2025-11-01',
-    deliveryEndDate: '2025-12-15',
-    deliveryLocation: 'Hetosa Primary Cooperative Warehouse 01',
+    deliveryStartDate: '',
+    deliveryEndDate: '',
+    deliveryLocation: '',
 
     // Step 2: Parties
-    farmerName: 'Tadesse Bekele Mengesha',
-    farmerFaydaId: 'ET-9921-4820-1192',
-    farmerPhone: '+251911445566',
-    region: 'Oromia',
-    woreda: 'Hetosa',
-    kebele: 'Kebele 04',
-    contractorOrgName: 'EthioFlour Agro-Processing S.C.',
-    contractorRepName: 'Dr. Hailu Zewde',
-    contractorTin: '0049281729',
+    farmerRecordId: '',
+    region: '',
+    woreda: '',
+    kebele: '',
+    contractorOrgName: '',
 
     // Step 3: Pricing & Escrow
     pricingModel: 'FLOOR_PLUS_MARKET_PREMIUM' as 'FIXED' | 'FLOOR_PLUS_MARKET_PREMIUM',
@@ -93,7 +87,7 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
     // Step 4: Legal
     arbitrationForum: 'Woreda Agriculture Office Conciliation Panel',
     forceMajeureNoticeDays: 7,
-    proclamationAccepted: true,
+    proclamationAccepted: false,
   });
 
   const totalValue = formData.quantityKg * formData.unitPriceEtb;
@@ -107,12 +101,8 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
       }
     }
     if (step === 2) {
-      if (!formData.farmerName || !formData.farmerFaydaId || !formData.contractorOrgName) {
-        setError(t('wizard.invalidParties', 'Buyer, producer name, and Fayda ID are required.'));
-        return false;
-      }
-      if (formData.farmerFaydaId.replace(/\D/g, '').length < 12 && !formData.farmerFaydaId.startsWith('ET-')) {
-        setError(t('wizard.invalidFayda', 'Fayda ID must be 12 digits or ET-XXXX-XXXX-XXXX format.'));
+      if (!formData.farmerRecordId.trim()) {
+        setError(t('wizard.invalidParties', 'Enter the registered producer record ID. Do not enter a name or national ID as a substitute.'));
         return false;
       }
     }
@@ -143,34 +133,40 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
 
     try {
       const payload = {
-        title: `${formData.commodity} Contract Farming Agreement - ${formData.woreda}`,
         commodity: formData.commodity,
-        variety: formData.variety,
-        quantityKg: Number(formData.quantityKg),
-        landAreaHectares: Number(formData.landAreaHectares),
-        qualitySpecs: {
-          maxMoisturePercent: Number(formData.maxMoisturePercent),
-          minPurityPercent: Number(formData.minPurityPercent),
-          grade: 'Grade 1',
+        quantity: Number(formData.quantityKg) / 100,
+        unit: 'quintal',
+        quality: `Variety: ${formData.variety}; max moisture: ${Number(formData.maxMoisturePercent)}%; minimum purity: ${Number(formData.minPurityPercent)}%`,
+        priceMechanism: formData.pricingModel === 'FIXED' ? 'FIXED' : 'MARKET',
+        fixedPrice: formData.pricingModel === 'FIXED' ? Number(formData.unitPriceEtb) : undefined,
+        deliveryStart: formData.deliveryStartDate || undefined,
+        deliveryEnd: formData.deliveryEndDate || undefined,
+        region: formData.region || undefined,
+        woreda: formData.woreda || undefined,
+        content: {
+          title: `${formData.commodity} Contract Farming Agreement`,
+          variety: formData.variety,
+          landAreaHectares: Number(formData.landAreaHectares),
+          qualitySpecs: {
+            maxMoisturePercent: Number(formData.maxMoisturePercent),
+            minPurityPercent: Number(formData.minPurityPercent),
+            grade: 'Grade 1',
+          },
+          pricing: {
+            pricingModel: formData.pricingModel,
+            unitPriceEtb: Number(formData.unitPriceEtb),
+            floorPriceEtb: Number(formData.floorPriceEtb),
+            marketPremiumPercent: Number(formData.marketPremiumPercent),
+            totalValueEtb: totalValue,
+            inputAdvanceValueEtb: Number(formData.inputAdvanceValueEtb),
+          },
+          deliveryLocation: formData.deliveryLocation,
+          deliveryStartDate: formData.deliveryStartDate || null,
+          deliveryEndDate: formData.deliveryEndDate || null,
+          proclamationAccepted: formData.proclamationAccepted,
+          linkageId: linkedDemand?.id ?? null,
         },
-        farmerId: 'usr-farmer-001',
-        farmerName: formData.farmerName,
-        farmerFaydaId: formData.farmerFaydaId,
-        farmerPhone: formData.farmerPhone,
-        contractorId: 'usr-contractor-001',
-        contractorOrgName: formData.contractorOrgName,
-        region: formData.region,
-        woreda: formData.woreda,
-        kebele: formData.kebele,
-        pricingModel: formData.pricingModel,
-        unitPriceEtb: Number(formData.unitPriceEtb),
-        floorPriceEtb: Number(formData.floorPriceEtb),
-        marketPremiumPercent: Number(formData.marketPremiumPercent),
-        totalValueEtb: totalValue,
-        inputAdvanceValueEtb: Number(formData.inputAdvanceValueEtb),
-        deliveryStartDate: formData.deliveryStartDate,
-        deliveryEndDate: formData.deliveryEndDate,
-        deliveryLocation: formData.deliveryLocation,
+        parties: [{ role: 'FARMER', farmerId: formData.farmerRecordId.trim() }],
       };
 
       const res = await api.contracts.create(payload);
@@ -346,56 +342,38 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
           </div>
         )}
 
-        {/* STEP 2: Parties & Fayda ID */}
+        {/* STEP 2: Registered parties */}
         {currentStep === 2 && (
           <div className="space-y-4">
             <h3 className="text-base font-bold text-stone-900 border-b border-stone-200 pb-2">
-              Step 2: Legal Parties & Fayda National e-KYC Verification
+              Step 2: Registered Contract Parties
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2 p-3 bg-stone-50 border border-stone-200 text-xs">
-                <span className="font-bold text-stone-900">Contractor / Industrial Buyer</span>
+                <span className="font-bold text-stone-900">Contracting organization</span>
                 <p className="text-stone-600 mt-1">
-                  {formData.contractorOrgName} (TIN: {formData.contractorTin}) • Rep: {formData.contractorRepName}
+                  The backend binds the contractor/cooperative party to your authenticated, registered account. Party identity is not accepted from this form.
                 </p>
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Smallholder Producer / Representative Name
+                  Registered producer record ID
                 </label>
                 <input
                   type="text"
-                  value={formData.farmerName}
-                  onChange={(e) => setFormData({ ...formData, farmerName: e.target.value })}
-                  className="w-full text-xs bg-white border border-stone-300 px-3 py-2 text-stone-800 focus:outline-none focus:border-stone-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Fayda National ID (12-Digit)
-                </label>
-                <input
-                  type="text"
-                  value={formData.farmerFaydaId}
-                  onChange={(e) => setFormData({ ...formData, farmerFaydaId: e.target.value })}
-                  placeholder="ET-XXXX-XXXX-XXXX"
-                  className="w-full text-xs bg-white border border-stone-300 px-3 py-2 font-mono text-forest-800 focus:outline-none focus:border-stone-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Producer Phone (SMS / USSD)
-                </label>
-                <input
-                  type="text"
-                  value={formData.farmerPhone}
-                  onChange={(e) => setFormData({ ...formData, farmerPhone: e.target.value })}
+                  required
+                  autoComplete="off"
+                  value={formData.farmerRecordId}
+                  onChange={(e) => setFormData({ ...formData, farmerRecordId: e.target.value })}
+                  placeholder="Enter the producer record ID from the registry"
+                  aria-describedby="producer-record-help"
                   className="w-full text-xs bg-white border border-stone-300 px-3 py-2 font-mono text-stone-800 focus:outline-none focus:border-stone-900"
                 />
+                <p id="producer-record-help" className="mt-1 text-xs text-stone-500">
+                  Use a registered producer record ID. Names, phone numbers, and Fayda IDs are not identity keys and are not submitted as party identity.
+                </p>
               </div>
 
               <div>
@@ -515,11 +493,11 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
                 </div>
                 <div className="flex justify-between">
                   <span className="text-stone-500">Buyer Entity:</span>
-                  <span className="font-semibold text-stone-900">{formData.contractorOrgName}</span>
+                  <span className="font-semibold text-stone-900">{formData.contractorOrgName || 'Authenticated organization'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-stone-500">Producer:</span>
-                  <span className="font-semibold text-stone-900">{formData.farmerName} ({formData.farmerFaydaId})</span>
+                  <span className="font-semibold text-stone-900">{formData.farmerRecordId || 'Producer not selected'}</span>
                 </div>
               </div>
 

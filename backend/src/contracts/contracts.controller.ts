@@ -19,9 +19,10 @@ export class ContractsController {
   ) {}
 
   @Post()
-  @Roles(Role.CONTRACTOR, Role.COOPERATIVE, Role.MOA_OFFICER, Role.WBOA_OFFICER)
-  create(@Body() dto: CreateContractDto, @CurrentUser() user: JwtUser) {
-    return this.contracts.create(dto, user);
+  @Roles(Role.CONTRACTOR)
+  async create(@Body() dto: CreateContractDto, @CurrentUser() user: JwtUser) {
+    const contract = await this.contracts.create(dto, user);
+    return { contract };
   }
 
   @Get()
@@ -29,8 +30,10 @@ export class ContractsController {
     @CurrentUser() user: JwtUser,
     @Query('status') status?: ContractStatus,
     @Query('commodity') commodity?: string,
+    @Query('region') region?: string,
+    @Query('woreda') woreda?: string,
   ) {
-    return this.contracts.list(user, { status, commodity });
+    return this.contracts.list(user, { status, commodity, region, woreda }).then((contracts) => ({ contracts }));
   }
 
   @Get(':id')
@@ -39,12 +42,12 @@ export class ContractsController {
   }
 
   @Get(':id/integrity')
-  integrity(@Param('id') id: string) {
-    return this.contracts.verifyIntegrity(id);
+  async integrity(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.verifyIntegrity(id, user);
   }
 
   @Patch(':id/send-for-signature')
-  @Roles(Role.CONTRACTOR, Role.MOA_OFFICER, Role.WBOA_OFFICER)
+  @Roles(Role.CONTRACTOR)
   sendForSignature(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.sendForSignatures(id, user);
   }
@@ -75,7 +78,7 @@ export class ContractsController {
   }
 
   @Patch(':id/submit-approval')
-  @Roles(Role.CONTRACTOR, Role.COOPERATIVE, Role.MOA_OFFICER, Role.RBOA_OFFICER, Role.WBOA_OFFICER)
+  @Roles(Role.CONTRACTOR)
   submitForApproval(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.submitForApproval(id, user);
   }

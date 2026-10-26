@@ -204,10 +204,7 @@ export const ROLE_REGISTRY: Record<RoleId, RoleDefinition> = {
     dashboardComponent: 'ContractorDashboard',
     permissions: [
       'dashboard:read:org',
-      'contract:create:org',
       'contract:read:org',
-      'contract:update:org',
-      'contract:sign:org',
       'contractor:create:org',
       'contractor:update:org',
       'document:create:org',
@@ -256,7 +253,6 @@ export const ROLE_REGISTRY: Record<RoleId, RoleDefinition> = {
     permissions: [
       'dashboard:read:org',
       'contract:read:org',
-      'contract:sign:org',
       'linkage:create:org',
       'linkage:read:org',
       'input_voucher:read:org',
