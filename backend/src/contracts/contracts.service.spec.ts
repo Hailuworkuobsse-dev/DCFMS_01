@@ -303,6 +303,15 @@ describe('ContractsService access control', () => {
     expect(prisma.contract.update).not.toHaveBeenCalled();
   });
 
+  it('requires an approved template before a contractor can create a draft', async () => {
+    prisma.contractor.findUnique.mockResolvedValue({ approvalStatus: 'APPROVED' });
+    await expect(service.create({
+      commodity: 'Wheat', quantity: 1, priceMechanism: 'MARKET', content: {},
+      parties: [{ role: 'FARMER', farmerId: 'farmer-record-1' }], parcelIds: ['parcel-1'],
+    } as any, { sub: 'contractor-owner', role: Role.CONTRACTOR })).rejects.toThrow('An approved contract template is required');
+    expect(prisma.contract.create).not.toHaveBeenCalled();
+  });
+
   it('rejects contract creation by non-contracting roles', async () => {
     await expect(service.create({} as any, { sub: 'farmer-owner', role: Role.FARMER }))
       .rejects.toBeInstanceOf(ForbiddenException);
