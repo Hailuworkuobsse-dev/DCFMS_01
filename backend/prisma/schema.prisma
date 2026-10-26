@@ -338,6 +338,7 @@ model Signature {
   signedAt   DateTime?
   ipAddress  String?
   deviceInfo String?
+  evidence SignatureEvidence?
   createdAt  DateTime        @default(now())
 
   @@index([contractId])
@@ -590,4 +591,26 @@ model ContractReviewAction {
   createdAt    DateTime @default(now())
   @@index([reviewerId, createdAt])
   @@index([action, createdAt])
+}
+
+
+model SignatureEvidence {
+  id                 String    @id @default(uuid())
+  signatureId        String    @unique
+  signature          Signature @relation(fields: [signatureId], references: [id], onDelete: Restrict)
+  contractId         String
+  signerId           String
+  signerRole         String
+  method             SignatureMethod
+  contentHash        String
+  signatureHash      String   @unique
+  authorityBasis     String
+  authorityReference String?
+  otpVerifiedAt      DateTime?
+  signedAt           DateTime
+  ipAddress          String?
+  userAgent          String?  @db.Text
+  createdAt          DateTime @default(now())
+  @@index([contractId, signedAt])
+  @@index([signerId, signedAt])
 }
