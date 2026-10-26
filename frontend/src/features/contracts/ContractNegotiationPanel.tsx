@@ -23,6 +23,8 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
   const [annexTitle, setAnnexTitle] = useState('');
   const [annexDescription, setAnnexDescription] = useState('');
   const [annexUrl, setAnnexUrl] = useState('');
+  const [newClauseTitle, setNewClauseTitle] = useState('');
+  const [newClauseText, setNewClauseText] = useState('');
   const [olderVersion, setOlderVersion] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -54,6 +56,30 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
   }, [contractId, initialContent]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const parsedContent = useMemo(() => {
+    try { return JSON.parse(contentText) as Record<string, any>; }
+    catch { return null; }
+  }, [contentText]);
+  const clauses: any[] = Array.isArray(parsedContent?.clauses) ? parsedContent.clauses : [];
+  const replaceClauses = (nextClauses: any[]) => {
+    if (!parsedContent) return;
+    setContentText(JSON.stringify({ ...parsedContent, clauses: nextClauses }, null, 2));
+  };
+  const updateClauseText = (index: number, text: string) => {
+    replaceClauses(clauses.map((clause, clauseIndex) => clauseIndex === index ? { ...clause, text } : clause));
+  };
+  const addCustomClause = () => {
+    if (!newClauseTitle.trim() || !newClauseText.trim() || !parsedContent) return;
+    const keyBase = newClauseTitle.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'custom-clause';
+    const usedKeys = new Set(clauses.map((clause) => clause.key));
+    let key = keyBase;
+    let suffix = 2;
+    while (usedKeys.has(key)) key = `${keyBase}-${suffix++}`;
+    replaceClauses([...clauses, { key, title: newClauseTitle.trim(), text: newClauseText.trim(), mandatory: false, editable: true }]);
+    setNewClauseTitle('');
+    setNewClauseText('');
+  };
 
   const latestVersion = versions.length ? versions[versions.length - 1] : null;
   const selectedOlder = versions.find((version) => String(version.version) === olderVersion);
@@ -132,8 +158,30 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-stone-900">Draft clauses and terms</h3>
-              <label className="block text-xs font-medium text-stone-700" htmlFor="draft-content">Structured agreement content (JSON)</label>
-              <textarea id="draft-content" rows={14} value={contentText} disabled={status !== 'DRAFT'} onChange={(event) => setContentText(event.target.value)} className="w-full rounded-lg border border-stone-300 p-3 font-mono text-xs disabled:bg-stone-100" />
+              <h4 className="text-xs font-semibold text-stone-700">Contract clauses</h4>
+              {clauses.length === 0 && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">No structured clauses were found. Select an approved template before creating a draft.</p>}
+              <div className="space-y-3">
+                {clauses.map((clause, index) => <article key={clause.key || index} className="rounded-lg border border-stone-200 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-semibold text-stone-900">{clause.title || clause.key}</p>
+                    {clause.mandatory && <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">Mandatory</span>}
+                    {clause.editable === false && <span className="rounded bg-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-700">Template-locked</span>}
+                    <span className="ml-auto text-[10px] text-stone-500">{clause.key}</span>
+                  </div>
+                  <textarea rows={3} value={clause.text || ''} disabled={status !== 'DRAFT' || clause.editable === false} onChange={(event) => updateClauseText(index, event.target.value)} className="mt-2 w-full rounded border border-stone-300 p-2 text-xs disabled:bg-stone-100" aria-label={`Clause text: ${clause.title || clause.key}`} />
+                  {status === 'DRAFT' && clause.editable !== false && !clause.mandatory && <button type="button" onClick={() => replaceClauses(clauses.filter((_, clauseIndex) => clauseIndex !== index))} className="mt-2 text-[11px] font-semibold text-rose-700 underline">Remove optional clause</button>}
+                </article>)}
+              </div>
+              <div className="space-y-2 rounded-lg border border-dashed border-stone-300 p-3">
+                <p className="text-xs font-semibold text-stone-800">Add a negotiated clause</p>
+                <input value={newClauseTitle} disabled={status !== 'DRAFT'} onChange={(event) => setNewClauseTitle(event.target.value)} placeholder="Clause title" className="w-full rounded border border-stone-300 px-3 py-2 text-xs disabled:bg-stone-100" />
+                <textarea value={newClauseText} disabled={status !== 'DRAFT'} onChange={(event) => setNewClauseText(event.target.value)} rows={2} placeholder="Proposed clause wording" className="w-full rounded border border-stone-300 p-3 text-xs disabled:bg-stone-100" />
+                <button type="button" disabled={status !== 'DRAFT' || !newClauseTitle.trim() || !newClauseText.trim()} onClick={addCustomClause} className="rounded border border-stone-300 px-3 py-2 text-xs font-semibold disabled:opacity-50">Add clause</button>
+              </div>
+              <details className="rounded-lg border border-stone-200 p-3">
+                <summary className="cursor-pointer text-xs font-semibold text-stone-700">Advanced structured-content editor (JSON)</summary>
+                <textarea id="draft-content" rows={10} value={contentText} disabled={status !== 'DRAFT'} onChange={(event) => setContentText(event.target.value)} className="mt-3 w-full rounded-lg border border-stone-300 p-3 font-mono text-xs disabled:bg-stone-100" />
+              </details>
               <label className="block text-xs font-medium text-stone-700" htmlFor="change-summary">Change summary</label>
               <input id="change-summary" value={changeSummary} disabled={status !== 'DRAFT'} onChange={(event) => setChangeSummary(event.target.value)} placeholder="Explain what changed and why" className="w-full rounded-lg border border-stone-300 px-3 py-2 text-xs disabled:bg-stone-100" />
               <button type="button" onClick={() => void saveDraft()} disabled={isSaving || status !== 'DRAFT'} className="rounded-lg bg-stone-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{isSaving ? 'Saving…' : 'Save new draft version'}</button>
