@@ -353,16 +353,9 @@ export const ContractCreateWizardPage: React.FC<ContractCreateWizardPageProps> =
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Cultivated Land Area (Hectares)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formData.landAreaHectares}
-                  onChange={(e) => setFormData({ ...formData, landAreaHectares: Number(e.target.value) })}
-                  className="w-full text-xs bg-white border border-stone-300 px-3 py-2 font-mono text-stone-800 focus:outline-none focus:border-stone-900"
-                />
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Cultivated land area</label>
+                <div className="w-full border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-xs text-stone-600">{selectedParcelArea.toFixed(2)} hectares</div>
+                <p className="mt-1 text-[11px] text-stone-500">Calculated from parcels selected in Step 2; it cannot be manually overridden.</p>
               </div>
 
               <div>
