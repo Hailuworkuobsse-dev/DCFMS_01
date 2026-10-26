@@ -591,6 +591,9 @@ export class ContractsService {
       throw new ForbiddenException('Only statutory reviewers may access the review queue');
     }
     const where: any = { status: 'PENDING_APPROVAL' };
+    if (actor.role === Role.MOA_OFFICER && actor.adminLevel !== AdminLevel.FEDERAL) {
+      throw new ForbiddenException('MoA statutory reviewers must have federal-level scope configured');
+    }
     if (actor.role === Role.WBOA_OFFICER) {
       if (!actor.region || !actor.woreda) throw new ForbiddenException('WBoA reviewers must have a registered region and woreda scope');
       where.region = actor.region;
@@ -625,6 +628,12 @@ export class ContractsService {
   async approve(id: string, decision: 'APPROVE' | 'REJECT' | 'RETURN_FOR_CORRECTION', note: string | undefined, actor: JwtUser) {
     if (!APPROVER_ROLES.includes(actor.role as Role)) {
       throw new ForbiddenException('Only government approvers can review contracts');
+    }
+    if (!['APPROVE', 'REJECT', 'RETURN_FOR_CORRECTION'].includes(decision)) {
+      throw new BadRequestException('Unsupported statutory review decision');
+    }
+    if (actor.role === Role.MOA_OFFICER && actor.adminLevel !== AdminLevel.FEDERAL) {
+      throw new ForbiddenException('MoA statutory reviewers must have federal-level scope configured');
     }
     if (decision !== 'APPROVE' && !note?.trim()) {
       throw new BadRequestException('A reason is required when rejecting or returning a contract');
