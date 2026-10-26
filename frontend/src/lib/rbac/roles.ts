@@ -204,9 +204,7 @@ export const ROLE_REGISTRY: Record<RoleId, RoleDefinition> = {
     dashboardComponent: 'ContractorDashboard',
     permissions: [
       'dashboard:read:org',
-      'contract:create:org',
       'contract:read:org',
-      'contract:sign:org',
       'contractor:create:org',
       'contractor:update:org',
       'document:create:org',
