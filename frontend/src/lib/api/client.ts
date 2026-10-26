@@ -146,6 +146,24 @@ export const api = {
         auditLogs: AuditLogEntry[];
       }>(`/contracts/${id}`),
     create: (data: any) => apiClient.post<{ contract: Contract }>('/contracts', data),
+    templates: (commodity?: string) => {
+      const query = commodity ? `?commodity=${encodeURIComponent(commodity)}` : '';
+      return apiClient.get<{ templates: any[] }>(`/contracts/templates${query}`);
+    },
+    lookupParties: (q: string) =>
+      apiClient.get<{ parties: any[] }>(`/contracts/party-lookup?q=${encodeURIComponent(q)}`),
+    saveDraft: (id: string, data: { content: Record<string, unknown>; expectedVersion: number; changeSummary?: string }) =>
+      apiClient.patch<{ contract: any; version: any }>(`/contracts/${id}/draft`, data),
+    comments: (id: string) => apiClient.get<{ comments: any[] }>(`/contracts/${id}/comments`),
+    addComment: (id: string, data: { body: string; clauseKey?: string }) =>
+      apiClient.post<any>(`/contracts/${id}/comments`, data),
+    annexes: (id: string) => apiClient.get<{ annexes: any[] }>(`/contracts/${id}/annexes`),
+    addAnnex: (id: string, data: { title: string; description?: string; content?: Record<string, unknown>; fileName?: string; mimeType?: string; storageUrl?: string }) =>
+      apiClient.post<any>(`/contracts/${id}/annexes`, data),
+    versions: (id: string) => apiClient.get<{ versions: any[] }>(`/contracts/${id}/versions`),
+    acceptChange: (id: string, data: { version: number; accepted: boolean; comment?: string }) =>
+      apiClient.post<any>(`/contracts/${id}/change-acceptances`, data),
+    changeAcceptances: (id: string) => apiClient.get<{ acceptances: any[] }>(`/contracts/${id}/change-acceptances`),
 requestOtp: (id: string) =>
       apiClient.post<{ message?: string; devOtp?: string }>(`/contracts/${id}/request-otp`),
     sign: (id: string, data: { faydaId: string; otpCode: string; consent: boolean }) =>
