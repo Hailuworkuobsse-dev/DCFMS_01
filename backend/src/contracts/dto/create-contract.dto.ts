@@ -20,7 +20,7 @@ export class CreateContractDto {
 }
 
 export class ApproveContractDto {
-  @IsString() decision: 'APPROVE' | 'REJECT';
+  @IsString() decision: 'APPROVE' | 'REJECT' | 'RETURN_FOR_CORRECTION';
   @IsOptional() @IsString() note?: string;
 }
 
