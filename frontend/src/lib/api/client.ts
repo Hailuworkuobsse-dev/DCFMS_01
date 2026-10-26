@@ -257,10 +257,7 @@ requestOtp: (id: string) =>
         otpCode: data.otpCode,
       }),
     endorse: (id: string, data: { notes?: string }) =>
-      apiClient.patch<any>(`/contracts/${id}/approve`, {
-        decision: 'APPROVE',
-        note: data.notes || 'Statutory compliance verified',
-      }),
+      apiClient.patch<any>(`/contracts/${id}/submit-approval`),
   },
   linkages: {
     list: () => apiClient.get<{ linkages: LinkageRequest[]; competencyApps: any[] }>('/linkage'),
