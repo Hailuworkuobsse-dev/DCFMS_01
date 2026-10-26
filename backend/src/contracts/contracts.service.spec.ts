@@ -4,6 +4,8 @@ import { ContractsService, canonicalJson } from './contracts.service';
 import { AdminLevel, Role } from '../common/enums';
 
 describe('ContractsService access control', () => {
+  const fixtureContent = {};
+  const fixtureHash = createHash('sha256').update(canonicalJson(fixtureContent)).digest('hex');
   const contract = {
     id: 'contract-1',
     contractNo: 'DCF-2026-000001',
@@ -11,6 +13,8 @@ describe('ContractsService access control', () => {
     region: 'Oromia',
     woreda: 'Ada',
     status: 'DRAFT',
+    content: fixtureContent,
+    contentHash: fixtureHash,
     parties: [{
       id: 'party-1',
       role: 'FARMER',
@@ -26,7 +30,7 @@ describe('ContractsService access control', () => {
       farmer: { id: 'farmer-record-2', userId: 'farmer-two', user: { id: 'farmer-two', region: 'Oromia', woreda: 'Ada', kebele: 'Kebele 02' }, cooperative: { userId: 'different-cooperative' } },
     }],
     signatures: [],
-    versions: [{ id: 'version-1', version: 1, content: {}, hash: 'hash-v1', createdById: 'contractor-owner', createdAt: new Date('2026-01-01T00:00:00.000Z') }],
+    versions: [{ id: 'version-1', version: 1, content: fixtureContent, hash: fixtureHash, previousHash: null, createdById: 'contractor-owner', createdAt: new Date('2026-01-01T00:00:00.000Z') }],
     payments: [{ id: 'payment-own', payerId: 'farmer-owner', payeeId: 'contractor-owner' }, { id: 'payment-other', payerId: 'farmer-two', payeeId: 'contractor-owner' }],
     loans: [{ id: 'loan-own', farmerId: 'farmer-record-1', fiId: 'fi-owner' }, { id: 'loan-other', farmerId: 'farmer-record-2', fiId: 'other-fi' }],
     vouchers: [{ id: 'voucher-own', farmerId: 'farmer-record-1', agroDealerId: 'dealer-owner' }, { id: 'voucher-other', farmerId: 'farmer-record-2', agroDealerId: 'other-dealer' }],
@@ -51,7 +55,7 @@ describe('ContractsService access control', () => {
       },
       contractor: { findUnique: jest.fn() },
       contractTemplate: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-      contractVersion: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'version-2', version: 2 }) },
+      contractVersion: { findMany: jest.fn().mockResolvedValue([{ id: 'version-1', contractId: 'contract-1', version: 1, content: fixtureContent, hash: fixtureHash, previousHash: null }]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'version-2', version: 2 }) },
       contractComment: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'comment-1' }) },
       contractAnnex: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'annex-1' }) },
       contractChangeAcceptance: { findMany: jest.fn().mockResolvedValue([{ userId: 'farmer-owner' }, { userId: 'farmer-two' }, { userId: 'contractor-owner' }]), upsert: jest.fn().mockResolvedValue({ accepted: true }) },
