@@ -1,5 +1,11 @@
 -- Phase 4: lifecycle event ledger, milestones, in-app notifications, amendments and closure records.
 ALTER TABLE `ContractVersion` ADD COLUMN `previousHash` VARCHAR(191) NULL;
+UPDATE `ContractVersion` current_version
+JOIN `ContractVersion` previous_version
+  ON previous_version.`contractId` = current_version.`contractId`
+ AND previous_version.`version` = current_version.`version` - 1
+SET current_version.`previousHash` = previous_version.`hash`
+WHERE current_version.`version` > 1;
 
 CREATE TABLE `ContractEvent` (
   `id` VARCHAR(191) NOT NULL,
