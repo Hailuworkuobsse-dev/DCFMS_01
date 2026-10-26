@@ -137,6 +137,12 @@ describe('ContractsService access control', () => {
     })).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('fails closed when a woreda officer lacks the region needed for a unique scope', async () => {
+    await expect(service.findOne(contract.id, {
+      sub: 'woreda-officer', role: Role.WBOA_OFFICER, adminLevel: AdminLevel.WOREDA, woreda: 'Ada',
+    })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('does not grant a field agent broad woreda access merely because an adminLevel claim exists', async () => {
     await expect(service.findOne(contract.id, {
       sub: 'field-agent', role: Role.FIELD_AGENT, adminLevel: AdminLevel.WOREDA,
