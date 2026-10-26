@@ -152,7 +152,7 @@ export class ContractsService {
   async findOne(id: string, actor: JwtUser) {
     const contract = await this.prisma.contract.findUnique({
       where: { id },
-      include: { parties: { include: { farmer: { select: { id: true, userId: true, cooperativeId: true, user: { select: { id: true, region: true, woreda: true, kebele: true } }, cooperative: { select: { userId: true } } } } } },
+      include: { parties: { include: { farmer: { select: { id: true, userId: true, cooperativeId: true, user: { select: { id: true, region: true, zone: true, woreda: true, kebele: true } }, cooperative: { select: { userId: true } } } } } },
         signatures: true, versions: { orderBy: { version: 'desc' } }, payments: true, loans: true, vouchers: true },
     });
     // Return 404 for both missing and unauthorized records to avoid ID enumeration.
@@ -170,17 +170,23 @@ export class ContractsService {
       return;
     }
     if (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.WOREDA) {
-      if (!actor.woreda) { where.id = '__no_scope__'; return; }
+      if (!actor.woreda || !actor.region) { where.id = '__no_scope__'; return; }
+      where.region = actor.region;
       where.woreda = actor.woreda;
       return;
     }
-    if (this.hasAdministrativeContractScope(actor) && (actor.adminLevel === AdminLevel.ZONAL || actor.adminLevel === AdminLevel.KEBELE)) {
-      // Contract schema has no zone/kebele fields. Restrict to contracts linked
-      // to producers in the actor's exact geography instead of trusting query params.
+    if (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.ZONAL) {
+      if (!actor.region || !actor.zone) { where.id = '__no_scope__'; return; }
       const userScope: Prisma.ContractWhereInput = { parties: { some: { farmer: { user: {
-        ...(actor.region ? { region: actor.region } : {}),
-        ...(actor.woreda ? { woreda: actor.woreda } : {}),
-        ...(actor.adminLevel === AdminLevel.KEBELE && actor.kebele ? { kebele: actor.kebele } : {}),
+        region: actor.region, zone: actor.zone,
+      } } } } };
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), userScope];
+      return;
+    }
+    if (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.KEBELE) {
+      if (!actor.region || !actor.woreda || !actor.kebele) { where.id = '__no_scope__'; return; }
+      const userScope: Prisma.ContractWhereInput = { parties: { some: { farmer: { user: {
+        region: actor.region, woreda: actor.woreda, kebele: actor.kebele,
       } } } } };
       where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), userScope];
       return;
@@ -264,13 +270,13 @@ export class ContractsService {
     if (actor.role === Role.SYSTEM_ADMIN || actor.role === Role.AUDITOR) return true;
     if (actor.adminLevel === AdminLevel.FEDERAL && [Role.MOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER].includes(actor.role as Role)) return true;
     if (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.REGIONAL) return Boolean(actor.region && contract.region === actor.region);
-    if (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.WOREDA) return Boolean(actor.woreda && contract.woreda === actor.woreda &&
-      (!actor.region || !contract.region || actor.region === contract.region));
-    if (this.hasAdministrativeContractScope(actor) && (actor.adminLevel === AdminLevel.ZONAL || actor.adminLevel === AdminLevel.KEBELE)) {
-      return contract.parties?.some((p: any) => p.farmer?.user &&
-        (!actor.region || p.farmer.user.region === actor.region) &&
-        (!actor.woreda || p.farmer.user.woreda === actor.woreda) &&
-        (actor.adminLevel !== AdminLevel.KEBELE || !actor.kebele || p.farmer.user.kebele === actor.kebele)) ?? false;
+    if (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.WOREDA) return Boolean(actor.region && actor.woreda && contract.region === actor.region && contract.woreda === actor.woreda);
+    if (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.ZONAL) {
+      return Boolean(actor.region && actor.zone && contract.parties?.some((p: any) => p.farmer?.user?.region === actor.region && p.farmer.user.zone === actor.zone));
+    }
+    if (this.hasAdministrativeContractScope(actor) && actor.adminLevel === AdminLevel.KEBELE) {
+      return Boolean(actor.region && actor.woreda && actor.kebele && contract.parties?.some((p: any) =>
+        p.farmer?.user?.region === actor.region && p.farmer.user.woreda === actor.woreda && p.farmer.user.kebele === actor.kebele));
     }
     if (contract.createdById === actor.sub) return actor.role === Role.CONTRACTOR || actor.role === Role.COOPERATIVE;
     if (actor.role === Role.FARMER) return contract.parties?.some((p: any) => p.farmer?.userId === actor.sub) ?? false;
