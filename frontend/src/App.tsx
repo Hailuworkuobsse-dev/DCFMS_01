@@ -8,6 +8,7 @@ import { DashboardRouterPage } from './features/dashboards/DashboardRouterPage';
 import { ContractListPage } from './features/contracts/ContractListPage';
 import { ContractCreateWizardPage } from './features/contracts/ContractCreateWizardPage';
 import { ContractDetailPage } from './features/contracts/ContractDetailPage';
+import { StatutoryReviewPage } from './features/contracts/StatutoryReviewPage';
 import { LinkagePage } from './features/linkage/LinkagePage';
 import { InputsPage } from './features/inputs/InputsPage';
 import { FinancePage } from './features/finance/FinancePage';
@@ -130,6 +131,10 @@ export default function App() {
   const renderContent = () => {
     if (currentPath === '/dashboard') {
       return <DashboardRouterPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/statutory-review') {
+      return <StatutoryReviewPage onNavigate={navigate} />;
     }
 
     if (currentPath === '/contracts/new') {
