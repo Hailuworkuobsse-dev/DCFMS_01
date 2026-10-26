@@ -685,7 +685,7 @@ export class ContractsService {
     });
     await this.audit.log({
       actorId: actor.sub,
-      action: decision === 'APPROVE' ? AuditAction.APPROVE : AuditAction.REJECT,
+      action: decision === 'APPROVE' ? AuditAction.APPROVE : decision === 'REJECT' ? AuditAction.REJECT : AuditAction.UPDATE,
       entity: 'Contract', entityId: id,
       after: { status: newStatus, decision, note, reviewerRole: actor.role, scopeRegion: actor.region, scopeWoreda: actor.woreda },
     });
