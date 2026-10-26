@@ -136,7 +136,7 @@ describe('ContractsService access control', () => {
     Role.RBOA_OFFICER,
     Role.WBOA_OFFICER,
     Role.RESOLUTION_OFFICER,
-  ])('denies %s access when no relationship or authorized administrative scope exists', async (role) => {
+  ])('denies %s access when no relationship or authorized administrative scope exists', async (role: Role) => {
     await expect(service.findOne(contract.id, { sub: 'unrelated-user', role }))
       .rejects.toBeInstanceOf(NotFoundException);
   });
