@@ -89,6 +89,17 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
     const keys = new Set([...Object.keys(selectedOlder.content || {}), ...Object.keys(latestVersion.content || {})]);
     return [...keys].filter((key) => JSON.stringify(selectedOlder.content?.[key]) !== JSON.stringify(latestVersion.content?.[key]));
   }, [selectedOlder, latestVersion]);
+  const clauseDiffs = useMemo(() => {
+    if (!selectedOlder || !latestVersion) return [];
+    const oldClauses = Array.isArray(selectedOlder.content?.clauses) ? selectedOlder.content.clauses : [];
+    const newClauses = Array.isArray(latestVersion.content?.clauses) ? latestVersion.content.clauses : [];
+    const oldByKey = new Map(oldClauses.map((clause: any) => [clause.key, clause]));
+    const newByKey = new Map(newClauses.map((clause: any) => [clause.key, clause]));
+    const keys = new Set([...oldByKey.keys(), ...newByKey.keys()]);
+    return [...keys]
+      .filter((key) => JSON.stringify(oldByKey.get(key) ?? null) !== JSON.stringify(newByKey.get(key) ?? null))
+      .map((key) => ({ key, oldClause: oldByKey.get(key), newClause: newByKey.get(key) }));
+  }, [selectedOlder, latestVersion]);
   const ownAcceptance = acceptances.find((item) => item.version === latestVersion?.version && item.userId === currentUserId);
 
   const saveDraft = async () => {
@@ -200,11 +211,19 @@ export const ContractNegotiationPanel: React.FC<ContractNegotiationPanelProps> =
               {!selectedOlder ? <p className="rounded-lg bg-stone-50 p-3 text-xs text-stone-500">Save a second version to compare changes.</p> : changedKeys.length === 0 ? <p className="rounded-lg bg-stone-50 p-3 text-xs text-stone-500">No top-level content differences found.</p> : (
                 <div className="space-y-2">
                   {changedKeys.map((key) => <div key={key} className="rounded-lg border border-stone-200 p-3">
-                    <p className="text-xs font-semibold text-stone-900">{key}</p>
-                    <p className="mt-2 text-[11px] font-semibold text-rose-700">Version {selectedOlder.version}</p>
-                    <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-[11px] text-stone-600">{JSON.stringify(selectedOlder.content?.[key] ?? null, null, 2)}</pre>
-                    <p className="mt-2 text-[11px] font-semibold text-emerald-700">Version {latestVersion.version}</p>
-                    <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-[11px] text-stone-600">{JSON.stringify(latestContent?.[key] ?? null, null, 2)}</pre>
+                    <p className="text-xs font-semibold text-stone-900">{key === 'clauses' ? 'Clause-level changes' : key}</p>
+                    {key === 'clauses' ? clauseDiffs.map((diff) => <div key={diff.key} className="mt-3 border-t border-stone-100 pt-3">
+                      <p className="text-xs font-semibold text-stone-800">{diff.newClause?.title || diff.oldClause?.title || diff.key}</p>
+                      <p className="mt-2 text-[11px] font-semibold text-rose-700">Version {selectedOlder.version}</p>
+                      <pre className="mt-1 whitespace-pre-wrap break-words text-[11px] text-stone-600">{diff.oldClause?.text ?? 'Clause did not exist'}</pre>
+                      <p className="mt-2 text-[11px] font-semibold text-emerald-700">Version {latestVersion.version}</p>
+                      <pre className="mt-1 whitespace-pre-wrap break-words text-[11px] text-stone-600">{diff.newClause?.text ?? 'Clause removed'}</pre>
+                    </div>) : <>
+                      <p className="mt-2 text-[11px] font-semibold text-rose-700">Version {selectedOlder.version}</p>
+                      <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-[11px] text-stone-600">{JSON.stringify(selectedOlder.content?.[key] ?? null, null, 2)}</pre>
+                      <p className="mt-2 text-[11px] font-semibold text-emerald-700">Version {latestVersion.version}</p>
+                      <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-[11px] text-stone-600">{JSON.stringify(latestContent?.[key] ?? null, null, 2)}</pre>
+                    </>}
                   </div>)}
                 </div>
               )}
