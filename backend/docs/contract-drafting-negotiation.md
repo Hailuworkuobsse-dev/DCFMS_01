@@ -8,7 +8,7 @@ npx prisma migrate deploy
 npx prisma generate
 ```
 
-The migration creates contract template, comment, annex, and change-acceptance tables and seeds one approved English-language standard template. The seeded legal clauses are a starter template and must be reviewed by authorized Ethiopian legal counsel before production use.
+The migration creates contract template, comment, annex, and change-acceptance tables and seeds one approved English-language standard template. The seeded legal clauses are a starter template and must be reviewed by authorized Ethiopian legal counsel before production use. The repository did not contain a prior baseline migration when this work was inspected, so this additive migration assumes the existing DCFMS schema (including `Contract`, `Farmer`, `Parcel`, and `User`) has already been initialized. A clean database needs a baseline migration for the complete schema before `migrate deploy` can work from empty.
 
 ## Endpoints
 
