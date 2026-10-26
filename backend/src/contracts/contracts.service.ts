@@ -145,7 +145,7 @@ export class ContractsService {
   async findOne(id: string, actor: JwtUser) {
     const contract = await this.prisma.contract.findUnique({
       where: { id },
-      include: { parties: { include: { farmer: { include: { user: true, cooperative: true } } } },
+      include: { parties: { include: { farmer: { include: { user: { select: { id: true, region: true, woreda: true, kebele: true } }, cooperative: true } } } },
         signatures: true, versions: { orderBy: { version: 'desc' } }, payments: true, loans: true, vouchers: true },
     });
     // Return 404 for both missing and unauthorized records to avoid ID enumeration.
@@ -314,7 +314,8 @@ export class ContractsService {
     return updated;
   }
 
-  async verifyIntegrity(id: string) {
+  async verifyIntegrity(id: string, actor: JwtUser) {
+    await this.findOne(id, actor);
     const contract = await this.prisma.contract.findUnique({ where: { id } });
     if (!contract) throw new NotFoundException();
     const recomputed = createHash('sha256')
