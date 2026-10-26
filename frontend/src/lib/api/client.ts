@@ -244,21 +244,22 @@ export const api = {
       apiClient.post<any>(`/contracts/${id}/change-acceptances`, data),
     changeAcceptances: (id: string) => apiClient.get<{ acceptances: any[] }>(`/contracts/${id}/change-acceptances`),
 requestOtp: (id: string) =>
-      apiClient.post<{ message?: string; devOtp?: string }>(`/contracts/${id}/request-otp`),
-    sign: (id: string, data: { faydaId: string; otpCode: string; consent: boolean }) =>
-      apiClient.post<{ contract: Contract }>(`/contracts/${id}/sign-otp`, {
-        // The backend identifies the signer via JWT; the Fayda ID is only
-        // validated on the mock API path (12 digits) — fallback covers
-        // non-farmer backend sessions, which have no Fayda FIN.
-        faydaId: data.faydaId || '000000000000',
-        otp: data.otpCode,
-        consent: data.consent,
+      apiClient.post<{ message?: string; deliveredVia?: string; devOtp?: string }>(`/contracts/${id}/sign/request-otp`),
+    sendForSignature: (id: string) => apiClient.patch<any>(`/contracts/${id}/send-for-signature`),
+    submitForApproval: (id: string) => apiClient.patch<any>(`/contracts/${id}/submit-approval`),
+    signatureEvidence: (id: string) => apiClient.get<{ evidence: any[] }>(`/contracts/${id}/signature-evidence`),
+    reviewQueue: () => apiClient.get<{ contracts: any[] }>('/contracts/review-queue'),
+    review: (id: string, data: { decision: 'APPROVE' | 'REJECT' | 'RETURN_FOR_CORRECTION'; note?: string }) =>
+      apiClient.patch<any>(`/contracts/${id}/approve`, data),
+    sign: (id: string, data: { faydaId?: string; otpCode: string; consent: boolean }) =>
+      apiClient.post<{ status: string; signatureHash: string }>(`/contracts/${id}/sign`, {
+        method: 'OTP',
+        otpCode: data.otpCode,
       }),
     endorse: (id: string, data: { notes?: string }) =>
-      apiClient.post<{ contract: Contract }>(`/contracts/${id}/decision`, {
-        action: 'approve',
-        reason: 'Statutory compliance verified',
-        notes: data.notes,
+      apiClient.patch<any>(`/contracts/${id}/approve`, {
+        decision: 'APPROVE',
+        note: data.notes || 'Statutory compliance verified',
       }),
   },
   linkages: {
