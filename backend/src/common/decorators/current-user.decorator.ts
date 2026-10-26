@@ -6,6 +6,7 @@ export interface JwtUser {
   adminLevel?: string;
   region?: string;
   woreda?: string;
+  kebele?: string;
 }
 
 export const CurrentUser = createParamDecorator(
