@@ -96,7 +96,7 @@ const DEMO_ACCOUNT_ROLES = [
 ] as const;
 
 /** Four logins per backend role. Password is for local development only. */
-const REAL_BACKEND_DEMO_ACCOUNTS = DEMO_ACCOUNT_ROLES.flatMap((role, roleIndex) =>
+const REAL_BACKEND_DEMO_ACCOUNTS = DEMO_ACCOUNT_ROLES.flatMap((role) =>
   [1, 2, 3, 4].map((ordinal) => {
     const email = ordinal === 1 && 'firstEmail' in role && role.firstEmail
       ? role.firstEmail
