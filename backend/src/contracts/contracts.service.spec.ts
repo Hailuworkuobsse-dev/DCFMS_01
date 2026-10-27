@@ -1,8 +1,12 @@
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { ContractsService } from './contracts.service';
+import { createHash } from 'crypto';
+import { ContractsService, canonicalJson } from './contracts.service';
 import { AdminLevel, Role } from '../common/enums';
 
 describe('ContractsService access control', () => {
+  const fixtureContent = {};
+  const fixtureHash = createHash('sha256').update(canonicalJson(fixtureContent)).digest('hex');
   const contract = {
     id: 'contract-1',
     contractNo: 'DCF-2026-000001',
@@ -10,6 +14,8 @@ describe('ContractsService access control', () => {
     region: 'Oromia',
     woreda: 'Ada',
     status: 'DRAFT',
+    content: fixtureContent,
+    contentHash: fixtureHash,
     parties: [{
       id: 'party-1',
       role: 'FARMER',
@@ -25,7 +31,7 @@ describe('ContractsService access control', () => {
       farmer: { id: 'farmer-record-2', userId: 'farmer-two', user: { id: 'farmer-two', region: 'Oromia', woreda: 'Ada', kebele: 'Kebele 02' }, cooperative: { userId: 'different-cooperative' } },
     }],
     signatures: [],
-    versions: [{ id: 'version-1', version: 1, content: {}, hash: 'hash-v1', createdById: 'contractor-owner', createdAt: new Date('2026-01-01T00:00:00.000Z') }],
+    versions: [{ id: 'version-1', version: 1, content: fixtureContent, hash: fixtureHash, previousHash: null, createdById: 'contractor-owner', createdAt: new Date('2026-01-01T00:00:00.000Z') }],
     payments: [{ id: 'payment-own', payerId: 'farmer-owner', payeeId: 'contractor-owner' }, { id: 'payment-other', payerId: 'farmer-two', payeeId: 'contractor-owner' }],
     loans: [{ id: 'loan-own', farmerId: 'farmer-record-1', fiId: 'fi-owner' }, { id: 'loan-other', farmerId: 'farmer-record-2', fiId: 'other-fi' }],
     vouchers: [{ id: 'voucher-own', farmerId: 'farmer-record-1', agroDealerId: 'dealer-owner' }, { id: 'voucher-other', farmerId: 'farmer-record-2', agroDealerId: 'other-dealer' }],
@@ -37,6 +43,11 @@ describe('ContractsService access control', () => {
   beforeEach(() => {
     prisma = {
       contractReviewAction: { create: jest.fn().mockResolvedValue({ id: 'review-action-1' }) },
+      contractEvent: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'event-1' }) },
+      contractNotification: { createMany: jest.fn().mockResolvedValue({ count: 1 }), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 1 }), findFirst: jest.fn(), findUnique: jest.fn() },
+      contractMilestone: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'milestone-1', title: 'Deliver inputs', status: 'PENDING' }), update: jest.fn().mockResolvedValue({ id: 'milestone-1', status: 'COMPLETED' }) },
+      contractAmendment: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'amendment-1', amendmentNo: 1 }), update: jest.fn().mockResolvedValue({ id: 'amendment-1' }) },
+      contractClosure: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ id: 'closure-1' }) },
       contract: {
         findUnique: jest.fn().mockImplementation(async () => JSON.parse(JSON.stringify(contract))),
         findMany: jest.fn().mockResolvedValue([contract]),
@@ -45,7 +56,7 @@ describe('ContractsService access control', () => {
       },
       contractor: { findUnique: jest.fn() },
       contractTemplate: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-      contractVersion: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'version-2', version: 2 }) },
+      contractVersion: { findMany: jest.fn().mockResolvedValue([{ id: 'version-1', contractId: 'contract-1', version: 1, content: fixtureContent, hash: fixtureHash, previousHash: null }]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'version-2', version: 2 }) },
       contractComment: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'comment-1' }) },
       contractAnnex: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'annex-1' }) },
       contractChangeAcceptance: { findMany: jest.fn().mockResolvedValue([{ userId: 'farmer-owner' }, { userId: 'farmer-two' }, { userId: 'contractor-owner' }]), upsert: jest.fn().mockResolvedValue({ accepted: true }) },
@@ -135,7 +146,7 @@ describe('ContractsService access control', () => {
     Role.RBOA_OFFICER,
     Role.WBOA_OFFICER,
     Role.RESOLUTION_OFFICER,
-  ])('denies %s access when no relationship or authorized administrative scope exists', async (role) => {
+  ])('denies %s access when no relationship or authorized administrative scope exists', async (role: Role) => {
     await expect(service.findOne(contract.id, { sub: 'unrelated-user', role }))
       .rejects.toBeInstanceOf(NotFoundException);
   });
@@ -288,6 +299,9 @@ describe('ContractsService access control', () => {
       { signerId: 'farmer-two', role: 'FARMER', status: 'PENDING' },
       { signerId: 'contractor-owner', role: 'CONTRACTOR', status: 'PENDING' },
     ]);
+    expect(prisma.contractEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventType: 'SIGNATURES_REQUESTED', fromStatus: 'DRAFT', toStatus: 'PENDING_SIGNATURES' }),
+    }));
   });
 
   it('does not allow an unrelated contractor to submit another party contract for signature', async () => {
@@ -359,5 +373,53 @@ describe('ContractsService access control', () => {
         toStatus: 'RETURNED_FOR_CORRECTION', scopeRegion: 'Oromia', scopeWoreda: 'Ada',
       }),
     }));
+  });
+
+  it('returns only the authenticated user notifications', async () => {
+    await service.listNotifications({ sub: 'farmer-owner', role: Role.FARMER }, true);
+    expect(prisma.contractNotification.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: 'farmer-owner', readAt: null },
+    }));
+  });
+
+  it('creates a real milestone and appends a lifecycle event', async () => {
+    prisma.contract.findUnique.mockResolvedValue({ ...contract, status: 'IN_EXECUTION' });
+    await service.createMilestone(contract.id, { title: 'Deliver inputs', dueAt: '2026-11-01T00:00:00.000Z' }, {
+      sub: 'contractor-owner', role: Role.CONTRACTOR,
+    });
+    expect(prisma.contractMilestone.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ contractId: contract.id, title: 'Deliver inputs', required: true }),
+    }));
+    expect(prisma.contractEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventType: 'MILESTONE_CREATED', actorId: 'contractor-owner' }),
+    }));
+  });
+
+  it('checks current contract and version content hashes during integrity verification', async () => {
+    const content = { clauses: [{ key: 'delivery', text: 'Deliver produce' }] };
+    const hash = createHash('sha256').update(canonicalJson(content)).digest('hex');
+    const intactContract = { ...contract, content, contentHash: hash };
+    prisma.contract.findUnique.mockResolvedValue(intactContract);
+    prisma.contractVersion.findMany.mockResolvedValue([{ id: 'version-1', contractId: contract.id, version: 1, content, hash, previousHash: null }]);
+    prisma.contractAnnex.findMany.mockResolvedValue([]);
+    prisma.contractEvent.findMany.mockResolvedValue([]);
+    const result = await service.verifyIntegrity(contract.id, { sub: 'contractor-owner', role: Role.CONTRACTOR });
+    expect(result.intact).toBe(true);
+    expect(result.currentContentIntact).toBe(true);
+    expect(result.versionIntegrity).toBe(true);
+  });
+
+  it('detects tampering in a saved contract version', async () => {
+    const changedContent = { clauses: [{ key: 'price', text: 'tampered' }] };
+    prisma.contract.findUnique.mockResolvedValue({ ...contract, content: fixtureContent, contentHash: fixtureHash });
+    prisma.contractVersion.findMany.mockResolvedValue([{
+      id: 'version-1', contractId: contract.id, version: 1, content: changedContent,
+      hash: fixtureHash, previousHash: null,
+    }]);
+    prisma.contractAnnex.findMany.mockResolvedValue([]);
+    prisma.contractEvent.findMany.mockResolvedValue([]);
+    const result = await service.verifyIntegrity(contract.id, { sub: 'contractor-owner', role: Role.CONTRACTOR });
+    expect(result.versionIntegrity).toBe(false);
+    expect(result.intact).toBe(false);
   });
 });

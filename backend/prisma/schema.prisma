@@ -158,6 +158,7 @@ model User {
   approvedContracts Contract[]  @relation("contract_approver")
   otpCodes     OtpCode[]
   refreshTokens RefreshToken[]
+  contractNotifications ContractNotification[]
 
   @@index([role])
   @@index([region, woreda])
@@ -290,6 +291,11 @@ model Contract {
   comments       ContractComment[]
   annexes        ContractAnnex[]
   changeAcceptances ContractChangeAcceptance[]
+  events ContractEvent[]
+  milestones ContractMilestone[]
+  amendments ContractAmendment[]
+  closure ContractClosure?
+  notifications ContractNotification[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -317,6 +323,7 @@ model ContractVersion {
   version    Int
   content    Json
   hash       String
+  previousHash String?
   createdById String
   createdAt  DateTime @default(now())
 
@@ -597,3 +604,110 @@ model SignatureEvidence {
   @@index([contractId, signedAt])
   @@index([signerId, signedAt])
 }
+
+enum ContractMilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+  CANCELLED
+}
+
+enum ContractAmendmentStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  APPLIED
+}
+
+model ContractEvent {
+  id           String   @id @default(uuid())
+  contractId   String
+  contract     Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  actorId      String?
+  actorRole    String?
+  eventType    String
+  fromStatus   String?
+  toStatus     String?
+  summary      String   @db.Text
+  metadata     Json?
+  previousHash String?
+  eventHash    String   @unique
+  createdAt    DateTime @default(now())
+
+  @@index([contractId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+model ContractMilestone {
+  id          String   @id @default(uuid())
+  contractId  String
+  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  title       String
+  description String?  @db.Text
+  dueAt       DateTime?
+  status      ContractMilestoneStatus @default(PENDING)
+  required    Boolean  @default(true)
+  completedAt DateTime?
+  completedById String?
+  evidence    Json?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([contractId, status])
+  @@index([dueAt, status])
+}
+
+model ContractNotification {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contractId String?
+  contract   Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  eventType  String
+  title      String
+  message    String   @db.Text
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, readAt, createdAt])
+  @@index([contractId, createdAt])
+}
+
+model ContractAmendment {
+  id             String   @id @default(uuid())
+  contractId     String
+  contract       Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  amendmentNo    Int
+  baseVersion    Int
+  proposedContent Json
+  contentHash    String
+  reason         String   @db.Text
+  status         ContractAmendmentStatus @default(DRAFT)
+  createdById    String
+  submittedAt    DateTime?
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?  @db.Text
+  appliedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([contractId, amendmentNo])
+  @@index([contractId, status])
+}
+
+model ContractClosure {
+  id              String   @id @default(uuid())
+  contractId      String   @unique
+  contract        Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  closedById      String
+  closureType     String
+  finalContentHash String
+  notes           String   @db.Text
+  evidence        Json?
+  closedAt        DateTime @default(now())
+}
+

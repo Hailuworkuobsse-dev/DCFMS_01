@@ -133,6 +133,7 @@ export class ContractsService {
       actorId: actor.sub, action: AuditAction.CREATE,
       entity: 'Contract', entityId: contract.id, after: { contractNo },
     });
+    await this.recordLifecycleEvent(contract.id, actor, 'CONTRACT_CREATED', 'Contract draft created from approved template', null, 'DRAFT', { contractNo, contentHash });
     return contract;
   }
 
@@ -277,7 +278,7 @@ export class ContractsService {
         data: { status: 'DRAFT', content: dto.content, contentHash: hash },
       });
       const version = await tx.contractVersion.create({
-        data: { contractId: id, version: nextVersion, content: dto.content, hash, createdById: actor.sub },
+        data: { contractId: id, version: nextVersion, content: dto.content, hash, previousHash: versions.find((version: any) => version.version === latestVersion)?.hash || null, createdById: actor.sub },
       });
       await tx.contractComment.create({
         data: { contractId: id, authorId: actor.sub, body: (dto.changeSummary || `Saved draft version ${nextVersion}`).slice(0, 4000), clauseKey: null },
@@ -288,6 +289,7 @@ export class ContractsService {
       actorId: actor.sub, action: AuditAction.UPDATE, entity: 'Contract', entityId: id,
       before: { version: latestVersion }, after: { version: nextVersion, hash },
     });
+    await this.recordLifecycleEvent(id, actor, 'DRAFT_VERSION_SAVED', dto.changeSummary || `Draft version ${nextVersion} saved`, contract.status, 'DRAFT', { version: nextVersion, hash });
     return result;
   }
 
@@ -302,9 +304,11 @@ export class ContractsService {
     const body = dto.body.trim();
     if (!body || body.length > 4000) throw new BadRequestException('Comment must contain 1–4000 characters');
     if (contract.status !== 'DRAFT') throw new BadRequestException('Negotiation comments are only available while the contract is a draft');
-    return this.prisma.contractComment.create({
+    const comment = await this.prisma.contractComment.create({
       data: { contractId: id, authorId: actor.sub, body, clauseKey: dto.clauseKey?.slice(0, 120) },
     });
+    await this.recordLifecycleEvent(id, actor, 'NEGOTIATION_COMMENT_ADDED', 'A negotiation comment was added', contract.status, contract.status, { commentId: comment.id, clauseKey: dto.clauseKey || null });
+    return comment;
   }
 
   async listAnnexes(id: string, actor: JwtUser) {
@@ -322,12 +326,14 @@ export class ContractsService {
       title: dto.title.trim(), description: dto.description || null, content: dto.content || null,
       fileName: dto.fileName || null, storageUrl: dto.storageUrl || null,
     })).digest('hex');
-    return this.prisma.contractAnnex.create({
+    const annex = await this.prisma.contractAnnex.create({
       data: {
         contractId: id, title: dto.title.trim(), description: dto.description, content: dto.content as any,
         fileName: dto.fileName, mimeType: dto.mimeType, storageUrl: dto.storageUrl, checksum, createdById: actor.sub,
       },
     });
+    await this.recordLifecycleEvent(id, actor, 'ANNEX_ADDED', `Annex added: ${annex.title}`, contract.status, contract.status, { annexId: annex.id, checksum });
+    return annex;
   }
 
   async compareVersions(id: string, actor: JwtUser) {
@@ -344,11 +350,13 @@ export class ContractsService {
     if (contract.status !== 'DRAFT') throw new BadRequestException('Changes can only be accepted while the contract is a draft');
     const version = await this.prisma.contractVersion.findFirst({ where: { contractId: id, version: dto.version } });
     if (!version) throw new NotFoundException('Contract version not found');
-    return this.prisma.contractChangeAcceptance.upsert({
+    const acceptance = await this.prisma.contractChangeAcceptance.upsert({
       where: { contractId_version_userId: { contractId: id, version: dto.version, userId: actor.sub } },
       create: { contractId: id, version: dto.version, userId: actor.sub, accepted: dto.accepted, comment: dto.comment?.slice(0, 1000) },
       update: { accepted: dto.accepted, comment: dto.comment?.slice(0, 1000), acceptedAt: new Date() },
     });
+    await this.recordLifecycleEvent(id, actor, dto.accepted ? 'VERSION_ACCEPTED' : 'CHANGES_REQUESTED', dto.accepted ? `Version ${dto.version} accepted` : `Changes requested for version ${dto.version}`, contract.status, contract.status, { version: dto.version, accepted: dto.accepted, comment: dto.comment || null });
+    return acceptance;
   }
 
   async listChangeAcceptances(id: string, actor: JwtUser) {
@@ -526,6 +534,8 @@ export class ContractsService {
     if (contract.status !== 'DRAFT') {
       throw new BadRequestException('Only DRAFT contracts can be sent for signature');
     }
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; signature submission is blocked');
     if (!this.lifecycle.canTransition(contract.status, 'PENDING_SIGNATURES')) {
       throw new BadRequestException('Invalid transition');
     }
@@ -553,7 +563,7 @@ export class ContractsService {
       throw new BadRequestException('Every contracting party must accept the latest draft version before it can be sent for signature');
     }
 
-    return this.prisma.contract.update({
+    const updated = await this.prisma.contract.update({
       where: { id },
       data: {
         status: 'PENDING_SIGNATURES',
@@ -571,6 +581,8 @@ export class ContractsService {
       },
       include: { signatures: true },
     });
+    await this.recordLifecycleEvent(id, actor, 'SIGNATURES_REQUESTED', 'Contract sent to all required signatories', 'DRAFT', 'PENDING_SIGNATURES', { signerCount: updated.signatures?.length || 0 });
+    return updated;
   }
 
   async submitForApproval(id: string, actor: JwtUser) {
@@ -581,9 +593,13 @@ export class ContractsService {
     if (contract.status !== 'SIGNED') {
       throw new BadRequestException('Contract must be fully signed');
     }
-    return this.prisma.contract.update({
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; statutory submission is blocked');
+    const updated = await this.prisma.contract.update({
       where: { id }, data: { status: 'PENDING_APPROVAL' },
     });
+    await this.recordLifecycleEvent(id, actor, 'SUBMITTED_FOR_STATUTORY_APPROVAL', 'Fully signed contract submitted for statutory approval', 'SIGNED', 'PENDING_APPROVAL');
+    return updated;
   }
 
   async listReviewQueue(actor: JwtUser) {
@@ -591,9 +607,6 @@ export class ContractsService {
       throw new ForbiddenException('Only statutory reviewers may access the review queue');
     }
     const where: any = { status: 'PENDING_APPROVAL' };
-    if (actor.role === Role.MOA_OFFICER && actor.adminLevel !== AdminLevel.FEDERAL) {
-      throw new ForbiddenException('MoA statutory reviewers must have federal-level scope configured');
-    }
     if (actor.role === Role.MOA_OFFICER && actor.adminLevel !== AdminLevel.FEDERAL) {
       throw new ForbiddenException('MoA statutory reviewers must have federal-level scope configured');
     }
@@ -638,12 +651,6 @@ export class ContractsService {
     if (actor.role === Role.MOA_OFFICER && actor.adminLevel !== AdminLevel.FEDERAL) {
       throw new ForbiddenException('MoA statutory reviewers must have federal-level scope configured');
     }
-    if (!['APPROVE', 'REJECT', 'RETURN_FOR_CORRECTION'].includes(decision)) {
-      throw new BadRequestException('Unsupported statutory review decision');
-    }
-    if (actor.role === Role.MOA_OFFICER && actor.adminLevel !== AdminLevel.FEDERAL) {
-      throw new ForbiddenException('MoA statutory reviewers must have federal-level scope configured');
-    }
     if (decision !== 'APPROVE' && !note?.trim()) {
       throw new BadRequestException('A reason is required when rejecting or returning a contract');
     }
@@ -663,6 +670,8 @@ export class ContractsService {
     if (contract.status !== 'PENDING_APPROVAL') {
       throw new BadRequestException('Contract is not pending statutory approval');
     }
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; statutory decision is blocked');
     const newStatus = decision === 'APPROVE' ? 'APPROVED' : decision === 'REJECT' ? 'REJECTED' : 'RETURNED_FOR_CORRECTION';
     const updated = await this.prisma.$transaction(async (tx: any) => {
       const result = await tx.contract.update({
@@ -689,21 +698,298 @@ export class ContractsService {
       entity: 'Contract', entityId: id,
       after: { status: newStatus, decision, note, reviewerRole: actor.role, scopeRegion: actor.region, scopeWoreda: actor.woreda },
     });
+    await this.recordLifecycleEvent(id, actor, `STATUTORY_${decision}`, note || `Statutory review: ${decision}`, 'PENDING_APPROVAL', newStatus, { decision, note: note || null });
     return updated;
+  }
+
+
+  private async recordLifecycleEvent(
+    contractId: string, actor: JwtUser | { sub: string; role: string } | null,
+    eventType: string, summary: string, fromStatus?: string | null, toStatus?: string | null, metadata?: any,
+  ) {
+    const contract = await this.prisma.contract.findUnique({
+      where: { id: contractId },
+      include: { parties: { include: { farmer: { select: { userId: true } } } } },
+    });
+    if (!contract) throw new NotFoundException('Contract not found while recording lifecycle event');
+    const previous = await this.prisma.contractEvent.findFirst({
+      where: { contractId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { eventHash: true, createdAt: true },
+    });
+    const createdAt = previous ? new Date(Math.max(Date.now(), new Date(previous.createdAt).getTime() + 1)) : new Date();
+    const payload = {
+      contractId, actorId: actor?.sub || null, actorRole: actor?.role || null,
+      eventType, fromStatus: fromStatus || null, toStatus: toStatus || null,
+      summary, metadata: metadata || null, previousHash: previous?.eventHash || null,
+      createdAt: createdAt.toISOString(),
+    };
+    const eventHash = createHash('sha256').update(canonicalJson(payload)).digest('hex');
+    await this.prisma.contractEvent.create({ data: { ...payload, metadata: metadata as any, createdAt, eventHash } });
+    const recipientIds = [...new Set([
+      contract.createdById,
+      ...(contract.parties || []).map((party: any) => party.farmer?.userId).filter(Boolean),
+    ])].filter((userId) => userId !== actor?.sub);
+    if (recipientIds.length) {
+      await this.prisma.contractNotification.createMany({
+        data: recipientIds.map((userId) => ({
+          userId, contractId, eventType, title: summary.slice(0, 180),
+          message: summary.slice(0, 4000),
+        })),
+      });
+    }
+    return { eventHash, previousHash: previous?.eventHash || null };
+  }
+
+  async listLifecycleEvents(id: string, actor: JwtUser) {
+    await this.findOne(id, actor);
+    return this.prisma.contractEvent.findMany({
+      where: { contractId: id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  async listMilestones(id: string, actor: JwtUser) {
+    await this.findOne(id, actor);
+    return this.prisma.contractMilestone.findMany({ where: { contractId: id }, orderBy: [{ dueAt: 'asc' }, { createdAt: 'asc' }] });
+  }
+
+  async createMilestone(id: string, dto: { title: string; description?: string; dueAt?: string; required?: boolean }, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) throw new ForbiddenException('Only the contract creator can define execution milestones');
+    if (!['APPROVED', 'IN_EXECUTION'].includes(contract.status)) throw new BadRequestException('Milestones can be defined only after statutory approval');
+    const title = dto.title?.trim();
+    if (!title || title.length > 180) throw new BadRequestException('Milestone title must contain 1–180 characters');
+    const dueAt = dto.dueAt ? new Date(dto.dueAt) : null;
+    if (dueAt && Number.isNaN(dueAt.getTime())) throw new BadRequestException('Milestone due date is invalid');
+    const milestone = await this.prisma.contractMilestone.create({
+      data: { contractId: id, title, description: dto.description?.trim(), dueAt, required: dto.required !== false, createdById: actor.sub },
+    });
+    await this.recordLifecycleEvent(id, actor, 'MILESTONE_CREATED', `Milestone created: ${title}`, contract.status, contract.status, { milestoneId: milestone.id, dueAt });
+    return milestone;
+  }
+
+  async updateMilestone(id: string, milestoneId: string, dto: { status: 'PENDING'|'IN_PROGRESS'|'COMPLETED'|'BLOCKED'|'CANCELLED'; notes?: string; evidence?: Record<string, any> }, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    const party = contract.createdById === actor.sub || (contract.parties || []).some((p: any) => p.farmer?.userId === actor.sub);
+    if (!party) throw new ForbiddenException('Only contracting parties may update milestone progress');
+    if (!['APPROVED', 'IN_EXECUTION'].includes(contract.status)) throw new BadRequestException('Milestones are only updated during approved execution');
+    const milestone = await this.prisma.contractMilestone.findFirst({ where: { id: milestoneId, contractId: id } });
+    if (!milestone) throw new NotFoundException('Milestone not found');
+    if (!['PENDING','IN_PROGRESS','COMPLETED','BLOCKED','CANCELLED'].includes(dto.status)) throw new BadRequestException('Invalid milestone status');
+    if (milestone.status === 'COMPLETED' && dto.status !== 'COMPLETED') throw new BadRequestException('Completed milestones cannot be reopened; create a corrective milestone');
+    const updated = await this.prisma.contractMilestone.update({
+      where: { id: milestoneId },
+      data: {
+        status: dto.status, completedAt: dto.status === 'COMPLETED' ? new Date() : null,
+        completedById: dto.status === 'COMPLETED' ? actor.sub : null,
+        evidence: dto.evidence ? ({ ...dto.evidence, notes: dto.notes || null } as any) : (dto.notes ? ({ notes: dto.notes } as any) : undefined),
+      },
+    });
+    await this.recordLifecycleEvent(id, actor, 'MILESTONE_UPDATED', `Milestone “${milestone.title}” marked ${dto.status}`, contract.status, contract.status, { milestoneId, status: dto.status, notes: dto.notes || null });
+    return updated;
+  }
+
+  async listNotifications(actor: JwtUser, unreadOnly = false) {
+    return this.prisma.contractNotification.findMany({
+      where: { userId: actor.sub, ...(unreadOnly ? { readAt: null } : {}) },
+      orderBy: { createdAt: 'desc' }, take: 100,
+    });
+  }
+
+  async markNotificationRead(id: string, actor: JwtUser) {
+    const result = await this.prisma.contractNotification.updateMany({
+      where: { id, userId: actor.sub, readAt: null }, data: { readAt: new Date() },
+    });
+    if (!result.count) {
+      const existing = await this.prisma.contractNotification.findFirst({ where: { id, userId: actor.sub } });
+      if (!existing) throw new NotFoundException('Notification not found');
+      return existing;
+    }
+    return this.prisma.contractNotification.findUnique({ where: { id } });
+  }
+
+  async listAmendments(id: string, actor: JwtUser) {
+    await this.findOne(id, actor);
+    return this.prisma.contractAmendment.findMany({ where: { contractId: id }, orderBy: { amendmentNo: 'asc' } });
+  }
+
+  async proposeAmendment(id: string, dto: { proposedContent: Record<string, any>; reason: string; baseVersion: number }, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) throw new ForbiddenException('Only the contract creator may propose an amendment');
+    if (!['SIGNED', 'APPROVED', 'IN_EXECUTION'].includes(contract.status)) throw new BadRequestException('Amendments require a signed or approved contract');
+    if (!dto.proposedContent || typeof dto.proposedContent !== 'object' || Array.isArray(dto.proposedContent)) throw new BadRequestException('Amendment content must be a structured object');
+    const latestVersion = Math.max(0, ...(contract.versions || []).map((v: any) => Number(v.version)));
+    if (dto.baseVersion !== latestVersion) throw new BadRequestException('The amendment base version is stale; reload the latest contract version');
+    const reason = dto.reason?.trim();
+    if (!reason || reason.length > 4000) throw new BadRequestException('Amendment reason must contain 1–4000 characters');
+    if (contract.templateId) {
+      const template = await this.prisma.contractTemplate.findUnique({ where: { id: contract.templateId } });
+      if (!template || template.status !== 'APPROVED') throw new BadRequestException('The contract template is no longer approved');
+      this.validateTemplateClauses(template.clauses, dto.proposedContent);
+    }
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; amendment is blocked');
+    const amendmentNo = await this.prisma.contractAmendment.count({ where: { contractId: id } }) + 1;
+    const contentHash = createHash('sha256').update(canonicalJson(dto.proposedContent)).digest('hex');
+    const amendment = await this.prisma.contractAmendment.create({
+      data: { contractId: id, amendmentNo, baseVersion: latestVersion, proposedContent: dto.proposedContent, contentHash, reason, createdById: actor.sub },
+    });
+    await this.recordLifecycleEvent(id, actor, 'AMENDMENT_PROPOSED', `Amendment ${amendmentNo} proposed: ${reason}`, contract.status, contract.status, { amendmentId: amendment.id, amendmentNo, baseVersion: latestVersion, contentHash });
+    return amendment;
+  }
+
+  async submitAmendment(id: string, amendmentId: string, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) throw new ForbiddenException('Only the contract creator may submit an amendment');
+    const amendment = await this.prisma.contractAmendment.findFirst({ where: { id: amendmentId, contractId: id } });
+    if (!amendment) throw new NotFoundException('Amendment not found');
+    if (amendment.status !== 'DRAFT') throw new BadRequestException('Only a draft amendment can be submitted');
+    const latestVersion = Math.max(0, ...(contract.versions || []).map((v: any) => Number(v.version)));
+    if (latestVersion !== amendment.baseVersion) throw new BadRequestException('The contract changed after this amendment was proposed; create a new amendment');
+    const updated = await this.prisma.contractAmendment.update({
+      where: { id: amendmentId }, data: { status: 'PENDING_APPROVAL', submittedAt: new Date() },
+    });
+    await this.recordLifecycleEvent(id, actor, 'AMENDMENT_SUBMITTED', `Amendment ${amendment.amendmentNo} submitted for statutory re-approval`, contract.status, contract.status, { amendmentId, amendmentNo: amendment.amendmentNo });
+    return updated;
+  }
+
+  async reviewAmendment(id: string, amendmentId: string, decision: 'APPROVE'|'REJECT', note: string | undefined, actor: JwtUser) {
+    if (!APPROVER_ROLES.includes(actor.role as Role)) throw new ForbiddenException('Only statutory reviewers may review amendments');
+    if (decision !== 'APPROVE' && decision !== 'REJECT') throw new BadRequestException('Unsupported amendment review decision');
+    if (decision === 'REJECT' && !note?.trim()) throw new BadRequestException('A reason is required when rejecting an amendment');
+    const contract = await this.findOne(id, actor);
+    if (actor.role === Role.WBOA_OFFICER && (!actor.region || !actor.woreda || contract.region !== actor.region || contract.woreda !== actor.woreda)) throw new ForbiddenException('Out of WBoA review scope');
+    if (actor.role === Role.RBOA_OFFICER && (!actor.region || contract.region !== actor.region)) throw new ForbiddenException('Out of RBoA review scope');
+    if (actor.role === Role.MOA_OFFICER && actor.adminLevel !== AdminLevel.FEDERAL) throw new ForbiddenException('MoA reviewers must have federal scope');
+    const amendmentIntegrity = await this.verifyIntegrity(id, actor);
+    if (!amendmentIntegrity.intact) throw new BadRequestException('Contract integrity check failed; amendment review is blocked');
+    const amendment = await this.prisma.contractAmendment.findFirst({ where: { id: amendmentId, contractId: id } });
+    if (!amendment || amendment.status !== 'PENDING_APPROVAL') throw new NotFoundException('Pending amendment not found');
+    if (decision === 'REJECT') {
+      const updated = await this.prisma.contractAmendment.update({ where: { id: amendmentId }, data: { status: 'REJECTED', reviewedById: actor.sub, reviewedAt: new Date(), reviewNote: note!.trim() } });
+      await this.recordLifecycleEvent(id, actor, 'AMENDMENT_REJECTED', `Amendment ${amendment.amendmentNo} rejected`, contract.status, contract.status, { amendmentId, note: note!.trim() });
+      return updated;
+    }
+    const latestVersion = Math.max(0, ...(contract.versions || []).map((v: any) => Number(v.version)));
+    if (latestVersion !== amendment.baseVersion) throw new BadRequestException('Contract changed while amendment was under review');
+    const hash = createHash('sha256').update(canonicalJson(amendment.proposedContent)).digest('hex');
+    if (hash !== amendment.contentHash) throw new BadRequestException('Amendment content integrity check failed');
+    const version = latestVersion + 1;
+    const previousHash = (contract.versions || []).find((v: any) => v.version === latestVersion)?.hash || null;
+    const result = await this.prisma.$transaction(async (tx: any) => {
+      const updatedContract = await tx.contract.update({
+        where: { id, status: contract.status, updatedAt: contract.updatedAt },
+        data: { content: amendment.proposedContent, contentHash: hash, status: 'DRAFT', approvedById: null, approvedAt: null, rejectionNote: null },
+      });
+      const createdVersion = await tx.contractVersion.create({ data: { contractId: id, version, content: amendment.proposedContent, hash, previousHash, createdById: actor.sub } });
+      const updatedAmendment = await tx.contractAmendment.update({ where: { id: amendmentId }, data: { status: 'APPLIED', reviewedById: actor.sub, reviewedAt: new Date(), reviewNote: note?.trim() || null, appliedAt: new Date() } });
+      return { contract: updatedContract, version: createdVersion, amendment: updatedAmendment };
+    });
+    await this.recordLifecycleEvent(id, actor, 'AMENDMENT_APPROVED_APPLIED', `Amendment ${amendment.amendmentNo} approved; revised contract requires party acceptance, re-signing and statutory re-approval`, contract.status, 'DRAFT', { amendmentId, amendmentNo: amendment.amendmentNo, version, hash });
+    await this.audit.log({ actorId: actor.sub, action: AuditAction.UPDATE, entity: 'Contract', entityId: id, before: { version: latestVersion }, after: { amendmentId, version, hash, status: 'DRAFT' } });
+    return result;
+  }
+
+  async closeContract(id: string, dto: { notes: string; evidence?: Record<string, any> }, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) throw new ForbiddenException('Only the contract creator may request contract closure');
+    if (contract.status !== 'IN_EXECUTION') throw new BadRequestException('Only an executing contract can be formally closed');
+    const notes = dto.notes?.trim();
+    if (!notes || notes.length > 4000) throw new BadRequestException('Closure notes must contain 1–4000 characters');
+    const milestones = await this.prisma.contractMilestone.findMany({ where: { contractId: id, required: true } });
+    if (!milestones.length) throw new BadRequestException('Define required execution milestones before closure');
+    const incomplete = milestones.filter((m: any) => m.status !== 'COMPLETED');
+    if (incomplete.length) throw new BadRequestException(`Cannot close contract: ${incomplete.length} required milestone(s) remain incomplete`);
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; closure is blocked');
+    const finalContentHash = contract.contentHash || '';
+    const result = await this.prisma.$transaction(async (tx: any) => {
+      const updatedContract = await tx.contract.update({ where: { id, status: 'IN_EXECUTION' }, data: { status: 'COMPLETED' } });
+      const closure = await tx.contractClosure.create({
+        data: { contractId: id, closedById: actor.sub, closureType: 'FULFILLED', finalContentHash, notes, evidence: dto.evidence as any },
+      });
+      await tx.parcel.updateMany({ where: { contractId: id }, data: { isLocked: false, contractId: null } });
+      return { contract: updatedContract, closure };
+    });
+    await this.recordLifecycleEvent(id, actor, 'CONTRACT_CLOSED', 'Contract formally closed after required milestones were completed', 'IN_EXECUTION', 'COMPLETED', { closureId: result.closure.id, finalContentHash, notes });
+    await this.audit.log({ actorId: actor.sub, action: AuditAction.UPDATE, entity: 'Contract', entityId: id, before: { status: 'IN_EXECUTION' }, after: { status: 'COMPLETED', closureId: result.closure.id, finalContentHash } });
+    return result;
+  }
+
+  async listClosure(id: string, actor: JwtUser) {
+    await this.findOne(id, actor);
+    return this.prisma.contractClosure.findUnique({ where: { contractId: id } });
   }
 
   async verifyIntegrity(id: string, actor: JwtUser) {
     await this.findOne(id, actor);
-    const contract = await this.prisma.contract.findUnique({ where: { id } });
+    const [contract, versions, annexes, events] = await Promise.all([
+      this.prisma.contract.findUnique({ where: { id } }),
+      this.prisma.contractVersion.findMany({ where: { contractId: id }, orderBy: { version: 'asc' } }),
+      this.prisma.contractAnnex.findMany({ where: { contractId: id }, orderBy: { createdAt: 'asc' } }),
+      this.prisma.contractEvent.findMany({ where: { contractId: id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }),
+    ]);
     if (!contract) throw new NotFoundException();
-    const recomputed = createHash('sha256')
-      .update(canonicalJson(contract.content))
-      .digest('hex');
+    const recomputed = createHash('sha256').update(canonicalJson(contract.content)).digest('hex');
+    const versionResults = versions.map((version: any, index: number) => {
+      const computed = createHash('sha256').update(canonicalJson(version.content)).digest('hex');
+      const previous = index > 0 ? versions[index - 1] : null;
+      return {
+        version: version.version, storedHash: version.hash, recomputedHash: computed,
+        contentIntact: version.hash === computed,
+        previousHashIntact: previous ? version.previousHash === previous.hash : !version.previousHash,
+      };
+    });
+    const latestVersion = versions.length ? versions[versions.length - 1] : null;
+    const latestMatchesContract = !latestVersion || (latestVersion.hash === contract.contentHash && canonicalJson(latestVersion.content) === canonicalJson(contract.content));
+    const annexResults = annexes.map((annex: any) => {
+      const computed = createHash('sha256').update(canonicalJson({
+        title: annex.title, description: annex.description || null, content: annex.content || null,
+        fileName: annex.fileName || null, storageUrl: annex.storageUrl || null,
+      })).digest('hex');
+      return { annexId: annex.id, intact: !annex.checksum || annex.checksum === computed, storedChecksum: annex.checksum, recomputedChecksum: computed };
+    });
+    let previousEventHash: string | null = null;
+    const eventResults = events.map((event: any) => {
+      const payload = {
+        contractId: event.contractId, actorId: event.actorId || null, actorRole: event.actorRole || null,
+        eventType: event.eventType, fromStatus: event.fromStatus || null, toStatus: event.toStatus || null,
+        summary: event.summary, metadata: event.metadata || null, previousHash: event.previousHash || null,
+        createdAt: new Date(event.createdAt).toISOString(),
+      };
+      const computed = createHash('sha256').update(canonicalJson(payload)).digest('hex');
+      const previousLinkIntact = (event.previousHash || null) === previousEventHash;
+      previousEventHash = event.eventHash;
+      return { eventId: event.id, intact: event.eventHash === computed && previousLinkIntact, storedHash: event.eventHash, recomputedHash: computed, previousLinkIntact };
+    });
+    const versionIntegrity = versionResults.every((v: any) => v.contentIntact && v.previousHashIntact);
+    const annexIntegrity = annexResults.every((a: any) => a.intact);
+    const eventIntegrity = eventResults.every((e: any) => e.intact);
+    const currentContentIntact = contract.contentHash === recomputed;
+    const latestEvent = events.length ? events[events.length - 1] : null;
+    const eventStatusMatchesContract = !latestEvent || !latestEvent.toStatus || latestEvent.toStatus === contract.status;
     return {
-      stored: contract.contentHash,
-      recomputed,
-      intact: contract.contentHash === recomputed,
+      contractId: id, checkedAt: new Date().toISOString(),
+      storedContentHash: contract.contentHash, recomputedContentHash: recomputed,
+      currentContentIntact, latestVersionMatchesContract: latestMatchesContract,
+      versionIntegrity, versions: versionResults,
+      annexIntegrity, annexes: annexResults,
+      eventLedgerIntegrity: eventIntegrity, eventStatusMatchesContract, events: eventResults,
+      intact: currentContentIntact && latestMatchesContract && versionIntegrity && annexIntegrity && eventIntegrity && eventStatusMatchesContract,
     };
+  }
+
+  async startExecution(id: string, actor: JwtUser) {
+    const contract = await this.findOne(id, actor);
+    if (contract.createdById !== actor.sub || actor.role !== Role.CONTRACTOR) throw new ForbiddenException('Only the contract creator may start execution');
+    if (contract.status !== 'APPROVED' || !this.lifecycle.canTransition(contract.status, 'IN_EXECUTION')) {
+      throw new BadRequestException('Only a statutorily approved contract can enter execution');
+    }
+    const integrity = await this.verifyIntegrity(id, actor);
+    if (!integrity.intact) throw new BadRequestException('Contract integrity check failed; execution is blocked');
+    const updated = await this.prisma.contract.update({ where: { id, status: 'APPROVED' }, data: { status: 'IN_EXECUTION' } });
+    await this.recordLifecycleEvent(id, actor, 'EXECUTION_STARTED', 'Contract execution started after statutory approval', 'APPROVED', 'IN_EXECUTION');
+    await this.audit.log({ actorId: actor.sub, action: AuditAction.UPDATE, entity: 'Contract', entityId: id, before: { status: 'APPROVED' }, after: { status: 'IN_EXECUTION' } });
+    return updated;
   }
 
   private async nextContractNo(): Promise<string> {

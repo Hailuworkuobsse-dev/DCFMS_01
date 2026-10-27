@@ -65,6 +65,16 @@ export class ContractsController {
     return this.contracts.lookupContractParties(query || '', user).then((parties) => ({ parties }));
   }
 
+  @Get('notifications')
+  notifications(@CurrentUser() user: JwtUser, @Query('unreadOnly') unreadOnly?: string) {
+    return this.contracts.listNotifications(user, unreadOnly === 'true').then((notifications) => ({ notifications }));
+  }
+
+  @Patch('notifications/:notificationId/read')
+  markNotificationRead(@Param('notificationId') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.markNotificationRead(id, user);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.contracts.findOne(id, user);
@@ -109,6 +119,66 @@ export class ContractsController {
   @Post(':id/change-acceptances')
   acceptChange(@Param('id') id: string, @Body() dto: AcceptContractChangeDto, @CurrentUser() user: JwtUser) {
     return this.contracts.acceptChange(id, dto, user);
+  }
+
+  @Get(':id/events')
+  lifecycleEvents(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.listLifecycleEvents(id, user).then((events) => ({ events }));
+  }
+
+  @Get(':id/milestones')
+  milestones(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.listMilestones(id, user).then((milestones) => ({ milestones }));
+  }
+
+  @Post(':id/milestones')
+  createMilestone(@Param('id') id: string, @Body() dto: { title: string; description?: string; dueAt?: string; required?: boolean }, @CurrentUser() user: JwtUser) {
+    return this.contracts.createMilestone(id, dto, user);
+  }
+
+  @Patch(':id/milestones/:milestoneId')
+  updateMilestone(@Param('id') id: string, @Param('milestoneId') milestoneId: string, @Body() dto: { status: 'PENDING'|'IN_PROGRESS'|'COMPLETED'|'BLOCKED'|'CANCELLED'; notes?: string; evidence?: Record<string, any> }, @CurrentUser() user: JwtUser) {
+    return this.contracts.updateMilestone(id, milestoneId, dto, user);
+  }
+
+  @Patch(':id/start-execution')
+  @Roles(Role.CONTRACTOR)
+  startExecution(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.startExecution(id, user);
+  }
+
+  @Get(':id/amendments')
+  amendments(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.listAmendments(id, user).then((amendments) => ({ amendments }));
+  }
+
+  @Post(':id/amendments')
+  @Roles(Role.CONTRACTOR)
+  proposeAmendment(@Param('id') id: string, @Body() dto: { proposedContent: Record<string, any>; reason: string; baseVersion: number }, @CurrentUser() user: JwtUser) {
+    return this.contracts.proposeAmendment(id, dto, user);
+  }
+
+  @Patch(':id/amendments/:amendmentId/submit')
+  @Roles(Role.CONTRACTOR)
+  submitAmendment(@Param('id') id: string, @Param('amendmentId') amendmentId: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.submitAmendment(id, amendmentId, user);
+  }
+
+  @Patch(':id/amendments/:amendmentId/review')
+  @Roles(Role.MOA_OFFICER, Role.RBOA_OFFICER, Role.WBOA_OFFICER, Role.MOTRI_OFFICER, Role.ECC_OFFICER, Role.EAA_OFFICER)
+  reviewAmendment(@Param('id') id: string, @Param('amendmentId') amendmentId: string, @Body() dto: { decision: 'APPROVE'|'REJECT'; note?: string }, @CurrentUser() user: JwtUser) {
+    return this.contracts.reviewAmendment(id, amendmentId, dto.decision, dto.note, user);
+  }
+
+  @Get(':id/closure')
+  closure(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.contracts.listClosure(id, user);
+  }
+
+  @Post(':id/closure')
+  @Roles(Role.CONTRACTOR)
+  closeContract(@Param('id') id: string, @Body() dto: { notes: string; evidence?: Record<string, any> }, @CurrentUser() user: JwtUser) {
+    return this.contracts.closeContract(id, dto, user);
   }
 
   @Get(':id/signature-evidence')
