@@ -109,6 +109,7 @@ async function main() {
     const contractNo = `DCF-DEMO-2026-${String(i + 1).padStart(4, '0')}`;
     const content = { demoData: true, title: `${crop.name} supply agreement ${i + 1}`, commodity: crop.name, agreedPriceEtbPerQt: crop.price, quantity: 120 + i * 25, unit: crop.unit, farmerUserId: farmerUser.id, cooperativeId: coop.id, contractorUserId: contractor.id, deliveryTerms: 'Synthetic fixture; not a legal agreement.' };
     const contentHash = sha(content), status = statuses[i % statuses.length];
+    const hasApproval = status === ContractStatus.APPROVED || status === ContractStatus.IN_EXECUTION || status === ContractStatus.COMPLETED;
     await prisma.contract.upsert({
       where: { contractNo },
       update: { templateId, commodity: crop.name, quantity: 120 + i * 25, unit: crop.unit, quality: i % 2 ? 'Grade B' : 'Grade A', priceMechanism: i % 2 ? 'MARKET' : 'FIXED', fixedPrice: crop.price, content, contentHash, region: farmerUser.region, woreda: farmerUser.woreda, status },
@@ -117,8 +118,8 @@ async function main() {
         quality: i % 2 ? 'Grade B' : 'Grade A', priceMechanism: i % 2 ? 'MARKET' : 'FIXED',
         fixedPrice: crop.price, deliveryStart: new Date(Date.UTC(2026, 0, i + 1)), deliveryEnd: new Date(Date.UTC(2026, 5, i + 1)),
         content, contentHash, region: farmerUser.region, woreda: farmerUser.woreda, createdById: contractor.id,
-        approvedById: [ContractStatus.APPROVED, ContractStatus.IN_EXECUTION, ContractStatus.COMPLETED].includes(status) ? byRole.get(Role.WBOA_OFFICER)![i % 4].id : null,
-        approvedAt: [ContractStatus.APPROVED, ContractStatus.IN_EXECUTION, ContractStatus.COMPLETED].includes(status) ? new Date(Date.UTC(2026, 1, i + 1)) : null,
+        approvedById: hasApproval ? byRole.get(Role.WBOA_OFFICER)![i % 4].id : null,
+        approvedAt: hasApproval ? new Date(Date.UTC(2026, 1, i + 1)) : null,
         status,
         parties: { create: [{ role: 'CONTRACTOR' }, { role: 'FARMER', farmerId: farmer.id }, { role: 'COOPERATIVE' }] },
         versions: { create: [{ version: 1, content, hash: contentHash, createdById: contractor.id }, ...(i % 3 === 0 ? [{ version: 2, content: { ...content, versionNote: 'Demo amendment' }, hash: sha({ ...content, versionNote: 'Demo amendment' }), createdById: contractor.id }] : [])] },
@@ -131,7 +132,7 @@ async function main() {
       const parcelId = id(100 + i * 2 + p);
       await prisma.parcel.upsert({
         where: { id: parcelId },
-        update: { farmerId: farmer.id, name: `Demo parcel ${i + 1}-${p + 1}`, sizeHa: 1.5 + i * 0.25 + p * 0.5, crop: crop.name, season: '2026 Meher', contractId: p === 0 ? contract.id : null, isLocked: p === 0 && [ContractStatus.APPROVED, ContractStatus.IN_EXECUTION].includes(status) },
+        update: { farmerId: farmer.id, name: `Demo parcel ${i + 1}-${p + 1}`, sizeHa: 1.5 + i * 0.25 + p * 0.5, crop: crop.name, season: '2026 Meher', contractId: p === 0 ? contract.id : null, isLocked: p === 0 && (status === ContractStatus.APPROVED || status === ContractStatus.IN_EXECUTION) },
         create: { id: parcelId, farmerId: farmer.id, name: `Demo parcel ${i + 1}-${p + 1}`, sizeHa: 1.5 + i * 0.25 + p * 0.5, gpsPolygon: `DEMO-GPS-${i + 1}-${p + 1}`, crop: crop.name, season: '2026 Meher', contractId: p === 0 ? contract.id : null, isLocked: p === 0 && [ContractStatus.APPROVED, ContractStatus.IN_EXECUTION].includes(status) },
       });
     }
@@ -153,7 +154,8 @@ async function main() {
     }
 
     const loanNo = `LOAN-DEMO-2026-${String(i + 1).padStart(4, '0')}`, loanStatus = [LoanStatus.SUBMITTED, LoanStatus.UNDER_REVIEW, LoanStatus.APPROVED, LoanStatus.DISBURSED, LoanStatus.REPAYING, LoanStatus.CLOSED][i % 6];
-    const loan = { farmerId: farmer.id, contractId: contract.id, fiId: byRole.get(Role.FI_OFFICER)![i % 4].id, requestedAmt: 25000 + i * 3500, approvedAmt: [LoanStatus.APPROVED, LoanStatus.DISBURSED, LoanStatus.REPAYING, LoanStatus.CLOSED].includes(loanStatus) ? 20000 + i * 3000 : null, interestRate: 12.5, status: loanStatus, purpose: `Seasonal ${crop.name} inputs; demo data.`, decidedAt: loanStatus === LoanStatus.SUBMITTED ? null : new Date(Date.UTC(2026, 1, i + 1)), decisionNote: loanStatus === LoanStatus.SUBMITTED ? null : 'Synthetic decision for testing.' };
+    const loanApproved = loanStatus === LoanStatus.APPROVED || loanStatus === LoanStatus.DISBURSED || loanStatus === LoanStatus.REPAYING || loanStatus === LoanStatus.CLOSED;
+    const loan = { farmerId: farmer.id, contractId: contract.id, fiId: byRole.get(Role.FI_OFFICER)![i % 4].id, requestedAmt: 25000 + i * 3500, approvedAmt: loanApproved ? 20000 + i * 3000 : null, interestRate: 12.5, status: loanStatus, purpose: `Seasonal ${crop.name} inputs; demo data.`, decidedAt: loanStatus === LoanStatus.SUBMITTED ? null : new Date(Date.UTC(2026, 1, i + 1)), decisionNote: loanStatus === LoanStatus.SUBMITTED ? null : 'Synthetic decision for testing.' };
     await prisma.loan.upsert({ where: { loanNo }, update: loan, create: { loanNo, ...loan } });
 
     const voucherNo = `VCH-DEMO-2026-${String(i + 1).padStart(4, '0')}`, voucherStatus = i % 4 === 0 ? VoucherStatus.REDEEMED : i % 4 === 1 ? VoucherStatus.EXPIRED : VoucherStatus.ISSUED;
