@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
@@ -42,31 +43,31 @@ describe('ContractsService access control', () => {
 
   beforeEach(() => {
     prisma = {
-      contractReviewAction: { create: jest.fn().mockResolvedValue({ id: 'review-action-1' }) },
-      contractEvent: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'event-1' }) },
-      contractNotification: { createMany: jest.fn().mockResolvedValue({ count: 1 }), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 1 }), findFirst: jest.fn(), findUnique: jest.fn() },
-      contractMilestone: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'milestone-1', title: 'Deliver inputs', status: 'PENDING' }), update: jest.fn().mockResolvedValue({ id: 'milestone-1', status: 'COMPLETED' }) },
-      contractAmendment: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'amendment-1', amendmentNo: 1 }), update: jest.fn().mockResolvedValue({ id: 'amendment-1' }) },
-      contractClosure: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ id: 'closure-1' }) },
+      contractReviewAction: { create: jest.fn().mockResolvedValue({ id: 'review-action-1' } as any) },
+      contractEvent: { findFirst: jest.fn().mockResolvedValue(null as any), findMany: jest.fn().mockResolvedValue([] as any), create: jest.fn().mockResolvedValue({ id: 'event-1' } as any) },
+      contractNotification: { createMany: jest.fn().mockResolvedValue({ count: 1 } as any), findMany: jest.fn().mockResolvedValue([] as any), updateMany: jest.fn().mockResolvedValue({ count: 1 } as any), findFirst: jest.fn(), findUnique: jest.fn() },
+      contractMilestone: { findMany: jest.fn().mockResolvedValue([] as any), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'milestone-1', title: 'Deliver inputs', status: 'PENDING' } as any), update: jest.fn().mockResolvedValue({ id: 'milestone-1', status: 'COMPLETED' } as any) },
+      contractAmendment: { count: jest.fn().mockResolvedValue(0 as any), findMany: jest.fn().mockResolvedValue([] as any), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'amendment-1', amendmentNo: 1 } as any), update: jest.fn().mockResolvedValue({ id: 'amendment-1' } as any) },
+      contractClosure: { findUnique: jest.fn().mockResolvedValue(null as any), create: jest.fn().mockResolvedValue({ id: 'closure-1' } as any) },
       contract: {
         findUnique: jest.fn().mockImplementation(async () => JSON.parse(JSON.stringify(contract))),
-        findMany: jest.fn().mockResolvedValue([contract]),
+        findMany: jest.fn().mockResolvedValue([contract] as any),
         create: jest.fn(),
         update: jest.fn(),
       },
       contractor: { findUnique: jest.fn() },
-      contractTemplate: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-      contractVersion: { findMany: jest.fn().mockResolvedValue([{ id: 'version-1', contractId: 'contract-1', version: 1, content: fixtureContent, hash: fixtureHash, previousHash: null }]), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'version-2', version: 2 }) },
-      contractComment: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'comment-1' }) },
-      contractAnnex: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'annex-1' }) },
-      contractChangeAcceptance: { findMany: jest.fn().mockResolvedValue([{ userId: 'farmer-owner' }, { userId: 'farmer-two' }, { userId: 'contractor-owner' }]), upsert: jest.fn().mockResolvedValue({ accepted: true }) },
+      contractTemplate: { findMany: jest.fn().mockResolvedValue([] as any), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+      contractVersion: { findMany: jest.fn().mockResolvedValue([{ id: 'version-1', contractId: 'contract-1', version: 1, content: fixtureContent, hash: fixtureHash, previousHash: null }] as any), findFirst: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'version-2', version: 2 } as any) },
+      contractComment: { findMany: jest.fn().mockResolvedValue([] as any), create: jest.fn().mockResolvedValue({ id: 'comment-1' } as any) },
+      contractAnnex: { findMany: jest.fn().mockResolvedValue([] as any), create: jest.fn().mockResolvedValue({ id: 'annex-1' } as any) },
+      contractChangeAcceptance: { findMany: jest.fn().mockResolvedValue([{ userId: 'farmer-owner' }, { userId: 'farmer-two' }, { userId: 'contractor-owner' }] as any), upsert: jest.fn().mockResolvedValue({ accepted: true } as any) },
       contractParty: { findMany: jest.fn().mockResolvedValue([
         { role: 'FARMER', farmer: { userId: 'farmer-owner' } },
         { role: 'FARMER', farmer: { userId: 'farmer-two' } },
-      ]) },
+      ] as any) },
       cooperative: { findUnique: jest.fn() },
-      farmer: { findMany: jest.fn().mockResolvedValue([{ id: 'farmer-record-1', user: { region: 'Oromia', woreda: 'Ada' } }]) },
-      parcel: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
+      farmer: { findMany: jest.fn().mockResolvedValue([{ id: 'farmer-record-1', user: { region: 'Oromia', woreda: 'Ada' } }] as any) },
+      parcel: { findMany: jest.fn().mockResolvedValue([] as any), updateMany: jest.fn() },
     };
     prisma.$transaction = jest.fn(async (callback: any) => callback(prisma));
     service = new ContractsService(prisma, { log: jest.fn() } as any, { canTransition: jest.fn().mockReturnValue(true) } as any);
