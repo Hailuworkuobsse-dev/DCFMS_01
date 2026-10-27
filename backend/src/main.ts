@@ -21,7 +21,9 @@ async function bootstrap() {
     .build();
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
 
-  const port = Number(process.env.PORT || 3000);
+  // Keep the NestJS API separate from the frontend/BFF (which serves the app on :3000).
+  // This matches backend/.env.example and frontend/src/server/backendAdapter.ts.
+  const port = Number(process.env.PORT || 3151);
   await app.listen(port);
   Logger.log(`DCFMS API listening on http://localhost:${port}/api/v1`, 'Bootstrap');
   Logger.log(`Swagger docs at http://localhost:${port}/api/docs`, 'Bootstrap');
