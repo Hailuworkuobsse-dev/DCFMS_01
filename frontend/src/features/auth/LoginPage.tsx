@@ -61,7 +61,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
   const handleSelectPreset = (preset: Preset) => {
     if (!isDevelopment) return;
     setUsername(preset.email);
-    setPassword(preset.password ?? 'ati2025!');
+    setPassword(preset.password ?? 'Password123!');
     setError(null);
   };
 
@@ -117,11 +117,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
             <p className="text-xs text-stone-600 mb-4">
               {t(
                 'auth.presetsDesc',
-                'Select any of the official stakeholder personas to evaluate their tailored dashboard, permissions, and workflow capabilities.'
+                'Select any seeded account to test its dashboard, permissions, and workflow capabilities.'
               )}
             </p>
+            <p className="text-[11px] border border-amber-200 bg-amber-50 text-amber-900 p-2 mb-3">
+              Development only: 64 synthetic accounts (4 for each backend role). All use Password123!. Never use these demo credentials in production.
+            </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[560px] overflow-y-auto pr-1">
               {presets.map((preset) => {
                 const isSelected = username === preset.email;
                 return (
@@ -142,6 +145,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
                       {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-stone-900 shrink-0" />}
                     </div>
                     <p className="text-stone-700 mt-1 truncate">{preset.label}</p>
+                    <p className="mt-1 break-all text-[10px] text-stone-600">
+                      <span className="font-semibold">Username:</span> {preset.email}
+                    </p>
+                    <p className="break-all text-[10px] text-stone-600">
+                      <span className="font-semibold">Password:</span> {preset.password ?? 'Password123!'}
+                    </p>
                   </button>
                 );
               })}
