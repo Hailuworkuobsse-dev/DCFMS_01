@@ -76,14 +76,47 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 
 /** Real (seeded) backend accounts surfaced to the dev login page when the
  *  NestJS backend integration is enabled. Password for all: Password123! */
-const REAL_BACKEND_DEMO_ACCOUNTS = [
-  { id: 'seed-contractor', email: 'contractor@acme.et', fullName: 'Acme Agri Exports', fullNameAm: 'Acme Agri Exports', primaryRole: 'Contractor', scopeLabel: 'Federal', orgName: 'Acme Agri Exports', password: 'Password123!' },
-  { id: 'seed-farmer', email: '+251911000004', fullName: 'Abebe Bekele', fullNameAm: 'አበበ በቀለ', primaryRole: 'ProducerIndividual', scopeLabel: 'Kebele 01, Adama', orgName: '', password: 'Password123!' },
-  { id: 'seed-moa', email: 'moa@dcfms.et', fullName: 'MoA Approver', fullNameAm: 'MoA Approver', primaryRole: 'MoAFederal', scopeLabel: 'Federal', orgName: 'Ministry of Agriculture', password: 'Password123!' },
-  { id: 'seed-wboa', email: 'wboa@dcfms.et', fullName: 'WBoA Officer — Adama', fullNameAm: 'WBoA Officer', primaryRole: 'WBoAWoreda', scopeLabel: 'Adama, Oromia', orgName: 'WBoA Adama', password: 'Password123!' },
-  { id: 'seed-fi', email: 'fi@cbe.et', fullName: 'CBE Loan Officer', fullNameAm: 'CBE Loan Officer', primaryRole: 'FinancialInstitution', scopeLabel: 'Federal', orgName: 'Commercial Bank of Ethiopia', password: 'Password123!' },
-  { id: 'seed-admin', email: 'admin@dcfms.et', fullName: 'System Admin', fullNameAm: 'System Admin', primaryRole: 'SystemAdmin', scopeLabel: 'Federal', orgName: 'ATI', password: 'Password123!' },
-];
+const DEMO_ACCOUNT_ROLES = [
+  { key: 'SYSTEM_ADMIN', slug: 'system-admin', label: 'System Administrator', frontendRole: 'SystemAdmin', scopeLabel: 'Federal', orgName: 'ATI', firstEmail: 'admin@dcfms.et', firstName: 'System Admin' },
+  { key: 'MOA_OFFICER', slug: 'moa', label: 'MoA Officer', frontendRole: 'MoAFederal', scopeLabel: 'Federal', orgName: 'Ministry of Agriculture', firstEmail: 'moa@dcfms.et', firstName: 'MoA Approver' },
+  { key: 'RBOA_OFFICER', slug: 'rboa', label: 'Regional Agriculture Officer', frontendRole: 'RBoARegional', scopeLabel: 'Oromia Region', orgName: 'Regional Bureau of Agriculture' },
+  { key: 'WBOA_OFFICER', slug: 'wboa', label: 'Woreda Agriculture Officer', frontendRole: 'WBoAWoreda', scopeLabel: 'Adama, Oromia', orgName: 'WBoA Adama', firstEmail: 'wboa@dcfms.et', firstName: 'WBoA Officer - Adama' },
+  { key: 'MOTRI_OFFICER', slug: 'motri', label: 'Trade and Regional Integration Officer', frontendRole: 'MoTRIOfficer', scopeLabel: 'Federal', orgName: 'MoTRI' },
+  { key: 'ECC_OFFICER', slug: 'ecc', label: 'Competition Commission Officer', frontendRole: 'ECCOfficer', scopeLabel: 'Federal', orgName: 'ECC' },
+  { key: 'EAA_OFFICER', slug: 'eaa', label: 'Agricultural Authority Officer', frontendRole: 'EAAOfficer', scopeLabel: 'Federal', orgName: 'EAA' },
+  { key: 'RESOLUTION_OFFICER', slug: 'resolution', label: 'Dispute Resolution Officer', frontendRole: 'JusticeOfficer', scopeLabel: 'Adama, Oromia', orgName: 'Justice Office' },
+  { key: 'CONTRACTOR', slug: 'contractor', label: 'Agricultural Contractor', frontendRole: 'Contractor', scopeLabel: 'Oromia', orgName: 'Acme Agri Exports', firstEmail: 'contractor@acme.et', firstName: 'Acme Agri Exports' },
+  { key: 'FARMER', slug: 'farmer', label: 'Smallholder Farmer', frontendRole: 'ProducerIndividual', scopeLabel: 'Kebele 01, Adama', orgName: '', firstName: 'Abebe Bekele' },
+  { key: 'COOPERATIVE', slug: 'cooperative', label: 'Farmers Cooperative', frontendRole: 'ProducerCooperative', scopeLabel: 'Adama, Oromia', orgName: 'Farmers Cooperative' },
+  { key: 'FI_OFFICER', slug: 'fi', label: 'Financial Institution Officer', frontendRole: 'FinancialInstitution', scopeLabel: 'Federal', orgName: 'Commercial Bank of Ethiopia', firstEmail: 'fi@cbe.et', firstName: 'CBE Loan Officer' },
+  { key: 'AGRO_DEALER', slug: 'agrodealer', label: 'Agricultural Input Dealer', frontendRole: 'AgroDealer', scopeLabel: 'Adama, Oromia', orgName: 'Agro Input Dealer' },
+  { key: 'FIELD_AGENT', slug: 'fieldagent', label: 'Field Agent', frontendRole: 'FieldAgent', scopeLabel: 'Adama, Oromia', orgName: 'Field Operations' },
+  { key: 'AUDITOR', slug: 'auditor', label: 'Independent Auditor', frontendRole: 'Auditor', scopeLabel: 'Federal', orgName: 'Independent Audit' },
+  { key: 'SUPPORT_AGENT', slug: 'support', label: 'Platform Support Agent', frontendRole: 'FieldAgent', scopeLabel: 'Federal', orgName: 'DCFMS Support' },
+] as const;
+
+/** Four logins per backend role. Password is for local development only. */
+const REAL_BACKEND_DEMO_ACCOUNTS = DEMO_ACCOUNT_ROLES.flatMap((role) =>
+  [1, 2, 3, 4].map((ordinal) => {
+    const email = ordinal === 1 && 'firstEmail' in role && role.firstEmail
+      ? role.firstEmail
+      : `${role.slug}${ordinal}@dcfms.et`;
+    const fullName = ordinal === 1 && 'firstName' in role && role.firstName
+      ? role.firstName
+      : `${role.label} ${ordinal}`;
+    return {
+      id: `seed-${role.key.toLowerCase()}-${ordinal}`,
+      email,
+      fullName,
+      fullNameAm: fullName,
+      primaryRole: role.frontendRole,
+      backendRole: role.key,
+      scopeLabel: role.scopeLabel,
+      orgName: role.orgName,
+      password: 'Password123!',
+    };
+  })
+);
 
 function createAuditEntry(
   user: AuthUser,

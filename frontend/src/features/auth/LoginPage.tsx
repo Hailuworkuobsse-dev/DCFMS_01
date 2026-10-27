@@ -33,7 +33,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
     { role: 'ProducerIndividual', label: 'Smallholder Farmer', email: 'alemu.farmer@ethio.et' },
   ];
 
-  type Preset = { role: RoleId; label: string; email: string; password?: string };
+  type Preset = { role: RoleId; label: string; email: string; password?: string; backendRole?: string };
   const [presets, setPresets] = useState<Preset[]>(rolePresets);
 
   // When the real backend integration is enabled, the BFF serves the seeded
@@ -50,6 +50,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
               role: (a.primaryRole ?? 'FieldAgent') as RoleId,
               label: a.orgName ? `${a.fullName} — ${a.orgName}` : String(a.fullName ?? a.email),
               email: String(a.email ?? ''),
+              ...(a.backendRole ? { backendRole: String(a.backendRole) } : {}),
               ...(a.password ? { password: String(a.password) } : {}),
             }))
           );
@@ -61,7 +62,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
   const handleSelectPreset = (preset: Preset) => {
     if (!isDevelopment) return;
     setUsername(preset.email);
-    setPassword(preset.password ?? 'ati2025!');
+    setPassword(preset.password ?? 'Password123!');
     setError(null);
   };
 
@@ -117,11 +118,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
             <p className="text-xs text-stone-600 mb-4">
               {t(
                 'auth.presetsDesc',
-                'Select any of the official stakeholder personas to evaluate their tailored dashboard, permissions, and workflow capabilities.'
+                'Select any seeded account to test its dashboard, permissions, and workflow capabilities.'
               )}
             </p>
+            <p className="text-[11px] border border-amber-200 bg-amber-50 text-amber-900 p-2 mb-3">
+              Development only: 64 synthetic accounts (4 for each backend role). All use Password123!. Never use these demo credentials in production.
+            </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[560px] overflow-y-auto pr-1">
               {presets.map((preset) => {
                 const isSelected = username === preset.email;
                 return (
@@ -137,11 +141,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, initialError })
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-[11px] text-forest-800 truncate">
-                        {preset.role}
+                        {preset.backendRole ?? preset.role}
                       </span>
                       {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-stone-900 shrink-0" />}
                     </div>
                     <p className="text-stone-700 mt-1 truncate">{preset.label}</p>
+                    <p className="mt-1 break-all text-[10px] text-stone-600">
+                      <span className="font-semibold">Username:</span> {preset.email}
+                    </p>
+                    <p className="break-all text-[10px] text-stone-600">
+                      <span className="font-semibold">Password:</span> {preset.password ?? 'Password123!'}
+                    </p>
                   </button>
                 );
               })}
